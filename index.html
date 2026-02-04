@@ -1,0 +1,1866 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SEAL QBR Dashboard</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body { margin: 0; padding: 0; }
+        .loading { animation: spin 1s linear infinite; }
+        @keyframes spin {
+            from { transform: rotate(0deg); }
+            to { transform: rotate(360deg); }
+        }
+        .status-indicator {
+            display: inline-block;
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            margin-right: 8px;
+        }
+        .status-live { background-color: #10b981; }
+        .status-sample { background-color: #f59e0b; }
+    </style>
+</head>
+<body class="bg-gradient-to-br from-slate-900 to-slate-800 min-h-screen">
+    <div id="app"></div>
+
+    <script>
+        // Configuration
+        const AIRTABLE_BASE_ID = 'app55vpOMLhznWdHC';
+        
+        // Load admin settings from localStorage
+        function loadAdminSettings() {
+            const saved = localStorage.getItem('seal_admin_settings');
+            if (saved) {
+                return JSON.parse(saved);
+            }
+            return {
+                totalPipelineTarget: 75000000,
+                closedWonConversion: 0.30,
+                strategicEventsTarget: 6,
+                monthlyPipelineTarget: 6250000,
+                totalSpend: 3700000
+            };
+        }
+
+        // State
+        let state = {
+            loading: false,
+            lastUpdated: null,
+            dateRange: 'FY27',
+            startDate: '2026-02-01',
+            endDate: '2027-01-31',
+            selectedSeal: 'all', // 'all' or specific SEAL name
+            usingLiveData: false,
+            adminSettings: loadAdminSettings(),
+            expandedSections: {
+                executiveSummary: true,
+                goalProgress: true,
+                monthlyGoals: true,
+                sealPerformance: true,
+                stageBreakdown: true,
+                monthlyTrends: true
+            },
+            metrics: getSampleData()
+        };
+
+        // Helper function to get date ranges
+        function getDateRanges() {
+            const today = new Date();
+            const currentYear = today.getFullYear();
+            const currentMonth = today.getMonth();
+
+            // This Month
+            const thisMonthStart = new Date(currentYear, currentMonth, 1);
+            const thisMonthEnd = new Date(currentYear, currentMonth + 1, 0);
+
+            // Last Month
+            const lastMonthStart = new Date(currentYear, currentMonth - 1, 1);
+            const lastMonthEnd = new Date(currentYear, currentMonth, 0);
+
+            // This Quarter
+            const thisQuarterMonth = Math.floor(currentMonth / 3) * 3;
+            const thisQuarterStart = new Date(currentYear, thisQuarterMonth, 1);
+            const thisQuarterEnd = new Date(currentYear, thisQuarterMonth + 3, 0);
+
+            // Last Quarter
+            const lastQuarterMonth = thisQuarterMonth - 3;
+            const lastQuarterYear = lastQuarterMonth < 0 ? currentYear - 1 : currentYear;
+            const lastQuarterStart = new Date(lastQuarterYear, lastQuarterMonth < 0 ? lastQuarterMonth + 12 : lastQuarterMonth, 1);
+            const lastQuarterEnd = new Date(lastQuarterYear, (lastQuarterMonth < 0 ? lastQuarterMonth + 12 : lastQuarterMonth) + 3, 0);
+
+            // Last 30 Days
+            const last30Start = new Date(today);
+            last30Start.setDate(today.getDate() - 30);
+
+            // Last 90 Days
+            const last90Start = new Date(today);
+            last90Start.setDate(today.getDate() - 90);
+
+            const formatDate = (date) => date.toISOString().split('T')[0];
+
+            return {
+                'this-month': { start: formatDate(thisMonthStart), end: formatDate(thisMonthEnd), label: 'This Month' },
+                'last-month': { start: formatDate(lastMonthStart), end: formatDate(lastMonthEnd), label: 'Last Month' },
+                'this-quarter': { start: formatDate(thisQuarterStart), end: formatDate(thisQuarterEnd), label: 'This Quarter' },
+                'last-quarter': { start: formatDate(lastQuarterStart), end: formatDate(lastQuarterEnd), label: 'Last Quarter' },
+                'last-30': { start: formatDate(last30Start), end: formatDate(today), label: 'Last 30 Days' },
+                'last-90': { start: formatDate(last90Start), end: formatDate(today), label: 'Last 90 Days' },
+                'YTD': { start: '2026-02-01', end: formatDate(today), label: 'YTD (FY27)' },
+                'FY27': { start: '2026-02-01', end: '2027-01-31', label: "FY '27 (Feb 2026 - Jan 2027)" },
+                'FY26': { start: '2025-02-01', end: '2026-01-31', label: "FY '26 (Feb 2025 - Jan 2026)" },
+                'Q1-FY27': { start: '2026-02-01', end: '2026-04-30', label: 'Q1 FY27' },
+                'Q2-FY27': { start: '2026-05-01', end: '2026-07-31', label: 'Q2 FY27' },
+                'Q3-FY27': { start: '2026-08-01', end: '2026-10-31', label: 'Q3 FY27' },
+                'Q4-FY27': { start: '2026-11-01', end: '2027-01-31', label: 'Q4 FY27' },
+                'custom': { start: state.startDate, end: state.endDate, label: 'Custom Range' }
+            };
+        }
+
+        // Sample data - REALISTIC: Only past months have data
+        function getSampleData() {
+            return {
+                targets: {
+                    totalPipeline: 75000000,
+                    sealSourcedStage0: 15,
+                    strategicEvents: 6,
+                    closedWonConversion: 0.30,
+                    currentPipeline: 8250000, // Only from Feb 2026 so far
+                    currentClosedWon: 350000,
+                    currentEvents: 2,
+                    currentConversion: 0.042
+                },
+                sealTeam: {
+                    totalPipelineInfluenced: 8250000,
+                    sealRequests: 12,
+                    totalOppsInfluenced: 8,
+                    closedWonACV: 350000,
+                    totalSpend: 3700000
+                },
+                previousPeriod: {
+                    totalPipelineInfluenced: 38000000, // Previous full FY26
+                    closedWonACV: 3100000,
+                    sealRequests: 78
+                },
+                monthlyGoals: [
+                    // Only February 2026 has some data (current month, partial)
+                    { month: 'Feb 2026', target: 6250000, actual: 8250000, closedWon: 350000 },
+                    // All future months are empty
+                    { month: 'Mar 2026', target: 6250000, actual: 0, closedWon: 0 },
+                    { month: 'Apr 2026', target: 6250000, actual: 0, closedWon: 0 },
+                    { month: 'May 2026', target: 6250000, actual: 0, closedWon: 0 },
+                    { month: 'Jun 2026', target: 6250000, actual: 0, closedWon: 0 },
+                    { month: 'Jul 2026', target: 6250000, actual: 0, closedWon: 0 },
+                    { month: 'Aug 2026', target: 6250000, actual: 0, closedWon: 0 },
+                    { month: 'Sep 2026', target: 6250000, actual: 0, closedWon: 0 },
+                    { month: 'Oct 2026', target: 6250000, actual: 0, closedWon: 0 },
+                    { month: 'Nov 2026', target: 6250000, actual: 0, closedWon: 0 },
+                    { month: 'Dec 2026', target: 6250000, actual: 0, closedWon: 0 },
+                    { month: 'Jan 2027', target: 6250000, actual: 0, closedWon: 0 }
+                ],
+                seals: [
+                    { name: 'Marty Seligman', influence: 3125279, closedWon: 160000, opps: 1, closedOpps: 1, types: ['Science Board'], avgDealSize: 3125279, winRate: 1.00, responseTime: 2.2 },
+                    { name: 'Guillermo Miranda', influence: 2914319, closedWon: 0, opps: 3, closedOpps: 0, types: ['Advisor'], avgDealSize: 971440, winRate: 0, responseTime: 2.3 },
+                    { name: 'Jeff Hancock', influence: 1200000, closedWon: 0, opps: 2, closedOpps: 0, types: ['Science Board'], avgDealSize: 600000, winRate: 0, responseTime: 2.8 },
+                    { name: 'Rhonda Morris', influence: 560000, closedWon: 190000, opps: 1, closedOpps: 1, types: ['CHRO Luminary', 'Advisor'], avgDealSize: 560000, winRate: 1.0, responseTime: 1.5 },
+                    { name: 'Judy Buchholz', influence: 450000, closedWon: 0, opps: 1, closedOpps: 0, types: ['CHRO Luminary'], avgDealSize: 450000, winRate: 0, responseTime: 3.1 }
+                ],
+                allSeals: [
+                    { name: 'Marty Seligman', influence: 3125279, closedWon: 160000, opps: 1, closedOpps: 1, types: ['Science Board'], avgDealSize: 3125279, winRate: 1.00, responseTime: 2.2 },
+                    { name: 'Guillermo Miranda', influence: 2914319, closedWon: 0, opps: 3, closedOpps: 0, types: ['Advisor'], avgDealSize: 971440, winRate: 0, responseTime: 2.3 },
+                    { name: 'Jeff Hancock', influence: 1200000, closedWon: 0, opps: 2, closedOpps: 0, types: ['Science Board'], avgDealSize: 600000, winRate: 0, responseTime: 2.8 },
+                    { name: 'Rhonda Morris', influence: 560000, closedWon: 190000, opps: 1, closedOpps: 1, types: ['CHRO Luminary', 'Advisor'], avgDealSize: 560000, winRate: 1.0, responseTime: 1.5 },
+                    { name: 'Judy Buchholz', influence: 450000, closedWon: 0, opps: 1, closedOpps: 0, types: ['CHRO Luminary'], avgDealSize: 450000, winRate: 0, responseTime: 3.1 }
+                ]
+            };
+        }
+
+        // Format functions
+        function formatCurrency(value) {
+            if (value >= 1000000) return `$${(value / 1000000).toFixed(1)}M`;
+            if (value >= 1000) return `$${(value / 1000).toFixed(0)}K`;
+            return `$${value}`;
+        }
+
+        function formatPercent(value) {
+            return `${(value * 100).toFixed(0)}%`;
+        }
+
+        function calculateChange(current, previous) {
+            if (!previous || previous === 0) return { value: 0, isPositive: true };
+            const change = ((current - previous) / previous) * 100;
+            return { value: Math.abs(change), isPositive: change >= 0 };
+        }
+
+        // Change date range
+        function changeDateRange(newRange) {
+            state.dateRange = newRange;
+            if (newRange !== 'custom') {
+                const ranges = getDateRanges();
+                state.startDate = ranges[newRange].start;
+                state.endDate = ranges[newRange].end;
+            }
+            render();
+            if (state.usingLiveData) {
+                fetchFromAirtable();
+            }
+        }
+
+        // Change SEAL filter
+        function changeSealFilter(sealName) {
+            state.selectedSeal = sealName;
+            render();
+            if (state.usingLiveData) {
+                fetchFromAirtable();
+            }
+        }
+
+        // Change custom dates
+        function changeStartDate(newDate) {
+            state.startDate = newDate;
+            render();
+        }
+
+        function changeEndDate(newDate) {
+            state.endDate = newDate;
+            render();
+        }
+
+        // Fetch records from Airtable table
+        async function fetchAirtableTable(tableId, tableName, pat) {
+            const url = `https://api.airtable.com/v0/${AIRTABLE_BASE_ID}/${tableId}`;
+            const allRecords = [];
+            let offset = null;
+
+            try {
+                do {
+                    const params = new URLSearchParams({ pageSize: '100' });
+                    if (offset) params.append('offset', offset);
+
+                    const response = await fetch(`${url}?${params}`, {
+                        headers: {
+                            'Authorization': `Bearer ${pat}`,
+                            'Content-Type': 'application/json'
+                        }
+                    });
+
+                    if (!response.ok) {
+                        throw new Error(`Airtable API error for ${tableName}: ${response.status} ${response.statusText}`);
+                    }
+
+                    const data = await response.json();
+                    allRecords.push(...data.records);
+                    offset = data.offset;
+                } while (offset);
+
+                console.log(`Fetched ${allRecords.length} records from ${tableName}`);
+                return allRecords;
+            } catch (error) {
+                console.error(`Error fetching ${tableName}:`, error);
+                throw error;
+            }
+        }
+
+        // Process Airtable data into dashboard metrics
+        function processAirtableData(opportunities, requests, engagements, seals) {
+            const startDate = new Date(state.startDate);
+            const endDate = new Date(state.endDate);
+
+            // Get admin settings at the beginning so they're available throughout the function
+            const adminSettings = state.adminSettings;
+
+            // Debug: Log sample records to see field names
+            console.log('=== DEBUG: Sample Records ===');
+            if (opportunities.length > 0) {
+                console.log('First Opportunity fields:', Object.keys(opportunities[0].fields));
+                console.log('First Opportunity data:', opportunities[0].fields);
+            }
+            if (requests.length > 0) {
+                console.log('First Request fields:', Object.keys(requests[0].fields));
+            }
+            if (engagements.length > 0) {
+                console.log('First Engagement fields:', Object.keys(engagements[0].fields));
+            }
+            if (seals.length > 0) {
+                console.log('First SEAL fields:', Object.keys(seals[0].fields));
+            }
+            console.log('Date range:', state.startDate, 'to', state.endDate);
+
+            // Filter opportunities by date range using SEAL Engagement Date
+            const filteredOpps = opportunities.filter(opp => {
+                const engagementDate = opp.fields['SEAL Engagement Date'] ? new Date(opp.fields['SEAL Engagement Date']) : null;
+                return engagementDate && engagementDate >= startDate && engagementDate <= endDate;
+            });
+
+            console.log(`Filtered ${filteredOpps.length} opportunities out of ${opportunities.length} total (using 'SEAL Engagement Date')`);
+
+            // Debug: Show a sample engagement date
+            if (opportunities.length > 0 && opportunities[0].fields['SEAL Engagement Date']) {
+                console.log('Sample engagement date:', opportunities[0].fields['SEAL Engagement Date']);
+            }
+
+            // Calculate pipeline metrics
+            const totalPipeline = filteredOpps.reduce((sum, opp) => {
+                const acv = parseFloat(opp.fields['1st Year ACV (converted)'] || 0);
+                return sum + acv;
+            }, 0);
+
+            console.log('Total Pipeline calculated:', totalPipeline);
+
+            // Debug: Check Stage field values
+            if (filteredOpps.length > 0) {
+                const stageValues = [...new Set(filteredOpps.map(opp => opp.fields['Stage']))];
+                console.log('Unique Stage values in filtered opps:', stageValues);
+            }
+
+            const closedWonOpps = filteredOpps.filter(opp =>
+                opp.fields['Stage'] === 'Closed Won' || opp.fields['Stage'] === '8 - Closed Won'
+            );
+
+            console.log(`Found ${closedWonOpps.length} closed won opportunities`);
+
+            const closedWonACV = closedWonOpps.reduce((sum, opp) => {
+                const acv = parseFloat(opp.fields['1st Year ACV (converted)'] || 0);
+                return sum + acv;
+            }, 0);
+
+            console.log('Closed Won ACV:', closedWonACV);
+
+            // Debug: Check Request fields
+            if (requests.length > 0) {
+                console.log('=== REQUESTS DEBUG ===');
+                console.log('Request fields:', Object.keys(requests[0].fields));
+                console.log('Sample request:', requests[0].fields);
+                console.log('Looking for "Created at" field:', requests[0].fields['Created at']);
+            }
+
+            // Filter requests by date range (exclude Labs requests)
+            const filteredRequests = requests.filter(req => {
+                const createdDate = req.fields['Created at'] ? new Date(req.fields['Created at']) : null;
+                const requestType = req.fields['Request Type'] || '';
+                const isNotLabs = !requestType.includes('(Labs)');
+                return createdDate && createdDate >= startDate && createdDate <= endDate && isNotLabs;
+            });
+
+            console.log(`Filtered ${filteredRequests.length} requests (excluding Labs requests) out of ${requests.length} total`);
+
+            // Count events from engagements
+            console.log('=== EVENT COUNT DEBUG ===');
+            console.log('Total engagements in table:', engagements.length);
+            console.log('Date range:', { start: startDate, end: endDate });
+
+            // Debug: Show what fields exist in engagement records
+            if (engagements.length > 0) {
+                console.log('Engagement fields available:', Object.keys(engagements[0].fields));
+                console.log('Sample engagement record:', engagements[0].fields);
+
+                // Check what date fields exist
+                const dateFields = Object.keys(engagements[0].fields).filter(key =>
+                    key.toLowerCase().includes('date')
+                );
+                console.log('Date-related fields found:', dateFields);
+            }
+
+            const filteredEngagements = engagements.filter(eng => {
+                const engDate = eng.fields['Engagement Date'] ? new Date(eng.fields['Engagement Date']) : null;
+                return engDate && engDate >= startDate && engDate <= endDate;
+            });
+            console.log('Total filtered engagements (after date filter):', filteredEngagements.length);
+
+            // Debug: Show all unique Type values
+            const uniqueTypes = [...new Set(filteredEngagements.map(eng => eng.fields['Type']))];
+            console.log('Unique Type values:', uniqueTypes);
+
+            // Debug: Show all unique Status values
+            const uniqueStatuses = [...new Set(filteredEngagements.map(eng => eng.fields['Status']))];
+            console.log('Unique Status values:', uniqueStatuses);
+
+            const eventCount = filteredEngagements.filter(eng => {
+                const engagementType = eng.fields['Engagement Type'] || '';
+                const engagementStatus = eng.fields['Engagement Status'] || '';
+
+                // Check if it's an Event/Webinar type
+                const isEventOrWebinar = engagementType.includes('Event/Webinar');
+
+                // Check if status is Complete
+                const isComplete = engagementStatus === 'Complete';
+
+                // Debug each engagement
+                if (isEventOrWebinar || engagementType || engagementStatus) {
+                    console.log('Checking engagement:', {
+                        engagementType,
+                        engagementStatus,
+                        isEventOrWebinar,
+                        isComplete,
+                        matches: isEventOrWebinar && isComplete
+                    });
+                }
+
+                return isEventOrWebinar && isComplete;
+            }).length;
+
+            console.log('Strategic events counted:', eventCount);
+
+            // Calculate individual SEAL performance
+            console.log('=== SEAL ATTRIBUTION DEBUG ===');
+
+            // Debug: Show what fields exist in SEALs table
+            if (seals.length > 0) {
+                console.log('SEAL table fields:', Object.keys(seals[0].fields));
+                console.log('Sample SEAL record:', seals[0].fields);
+            }
+
+            // Log all SEAL names from the SEALs table (trying different field names)
+            console.log('Trying field "Name":', seals.map(s => s.fields['Name']));
+            console.log('Trying field "SEAL Name":', seals.map(s => s.fields['SEAL Name']));
+            console.log('Trying field "Full Name":', seals.map(s => s.fields['Full Name']));
+            console.log('Trying field "SEAL confirmed":', seals.map(s => s.fields['SEAL confirmed']));
+
+            // Log all unique SEAL names from opportunities
+            const uniqueOppSealNames = [...new Set(filteredOpps.map(opp => opp.fields['SEAL Name']).filter(Boolean))];
+            console.log('SEAL names from Opportunities table:', uniqueOppSealNames);
+
+            if (filteredOpps.length > 0 && filteredOpps[0].fields) {
+                console.log('Sample SEAL Name field from opportunity:', filteredOpps[0].fields['SEAL Name']);
+                console.log('Type of SEAL Name field:', typeof filteredOpps[0].fields['SEAL Name']);
+                console.log('Is it an array?', Array.isArray(filteredOpps[0].fields['SEAL Name']));
+            }
+
+            const sealMetrics = seals.map(seal => {
+                // Use the correct field name (case-sensitive!)
+                const sealName = seal.fields['Full name'];
+                const sealTypes = seal.fields['Type'] ? [seal.fields['Type']] : ['Advisor'];
+
+                // Find opportunities influenced by this SEAL
+                const sealOpps = filteredOpps.filter(opp => {
+                    const sealNameField = opp.fields['SEAL Name'];
+                    // Handle both array and single value
+                    if (Array.isArray(sealNameField)) {
+                        return sealNameField.some(name => name === sealName || name.includes(sealName));
+                    } else if (sealNameField) {
+                        return sealNameField === sealName || sealNameField.includes(sealName);
+                    }
+                    return false;
+                });
+
+                console.log(`SEAL "${sealName}" matched ${sealOpps.length} opportunities`);
+
+                const influence = sealOpps.reduce((sum, opp) => sum + parseFloat(opp.fields['1st Year ACV (converted)'] || 0), 0);
+
+                const sealClosedWon = sealOpps
+                    .filter(opp => opp.fields['Stage'] === 'Closed Won' || opp.fields['Stage'] === '8 - Closed Won')
+                    .reduce((sum, opp) => sum + parseFloat(opp.fields['1st Year ACV (converted)'] || 0), 0);
+
+                const totalOpps = sealOpps.length;
+                const closedOpps = sealOpps.filter(opp =>
+                    opp.fields['Stage'] === 'Closed Won' || opp.fields['Stage'] === '8 - Closed Won'
+                ).length;
+
+                const winRate = totalOpps > 0 ? closedOpps / totalOpps : 0;
+                const avgDealSize = totalOpps > 0 ? influence / totalOpps : 0;
+
+                // Calculate response time from requests
+                const sealRequests = filteredRequests.filter(req => {
+                    const reqSealNames = req.fields['SEAL Name'] || [];
+                    return reqSealNames.includes(sealName);
+                });
+
+                let avgResponseTime = 0;
+                if (sealRequests.length > 0) {
+                    const responseTimes = sealRequests
+                        .filter(req => req.fields['Response Time (days)'])
+                        .map(req => parseFloat(req.fields['Response Time (days)']));
+
+                    if (responseTimes.length > 0) {
+                        avgResponseTime = responseTimes.reduce((sum, time) => sum + time, 0) / responseTimes.length;
+                    }
+                }
+
+                // Calculate stage breakdown
+                const stageBreakdown = {};
+                sealOpps.forEach(opp => {
+                    const stage = opp.fields['Stage'] || 'Unknown';
+                    if (!stageBreakdown[stage]) {
+                        stageBreakdown[stage] = { count: 0, value: 0 };
+                    }
+                    stageBreakdown[stage].count++;
+                    stageBreakdown[stage].value += parseFloat(opp.fields['1st Year ACV (converted)'] || 0);
+                });
+
+                // Helper function to determine what stage an opp was in at a specific date
+                function getStageAtDate(opp, targetDate) {
+                    const currentStage = opp.fields['Stage'] || 'Unknown';
+                    const closeDate = opp.fields['Close Date'];
+
+                    // Check STG date fields in reverse order (STG9 down to STG0)
+                    // Find the highest stage number reached by the target date
+                    for (let stgNum = 9; stgNum >= 0; stgNum--) {
+                        const stgField = `STG${stgNum} Date`;
+                        const stageDate = opp.fields[stgField];
+
+                        if (stageDate) {
+                            const stageDateObj = new Date(stageDate);
+                            if (stageDateObj <= targetDate) {
+                                // This stage was reached by the target date
+                                // Now check if it was closed by then
+                                if (currentStage.includes('Closed') && closeDate) {
+                                    const closeDateObj = new Date(closeDate);
+                                    if (closeDateObj <= targetDate) {
+                                        // Was closed by target date
+                                        return currentStage;
+                                    }
+                                }
+                                // Not closed yet, or not a closed stage - return the STG stage
+                                // Use the current stage name if it matches this number
+                                if (currentStage.startsWith(`${stgNum} -`)) {
+                                    return currentStage;
+                                }
+                                // Otherwise construct a generic stage name
+                                return `${stgNum} - Stage ${stgNum}`;
+                            }
+                        }
+                    }
+
+                    // If no stage dates found, check if opp was engaged by then
+                    const engDate = opp.fields['SEAL Engagement Date'] ? new Date(opp.fields['SEAL Engagement Date']) : null;
+                    if (engDate && engDate <= targetDate) {
+                        // Opportunity existed but no stage dates - use current stage as fallback
+                        return currentStage;
+                    }
+
+                    return null; // Opportunity didn't exist yet at this date
+                }
+
+                // Calculate quarterly ACV trends (last 5 quarters) - using HISTORICAL stages
+                const quarterlyTrend = [];
+
+                // Helper to get quarter info
+                function getQuarterInfo(date) {
+                    const year = date.getFullYear();
+                    const month = date.getMonth();
+                    const quarter = Math.floor(month / 3) + 1;
+
+                    // Calculate quarter start and end
+                    const quarterStartMonth = (quarter - 1) * 3;
+                    const quarterStart = new Date(year, quarterStartMonth, 1);
+                    const quarterEnd = new Date(year, quarterStartMonth + 3, 0);
+                    quarterEnd.setHours(23, 59, 59, 999);
+
+                    return {
+                        label: `Q${quarter} '${year.toString().slice(-2)}`,
+                        start: quarterStart,
+                        end: quarterEnd
+                    };
+                }
+
+                // Get current quarter and go back 4 more (5 total)
+                const today = new Date();
+                for (let i = 4; i >= 0; i--) {
+                    // Calculate date i quarters ago
+                    const quarterDate = new Date(today);
+                    quarterDate.setMonth(today.getMonth() - (i * 3));
+
+                    const quarterInfo = getQuarterInfo(quarterDate);
+
+                    // For each opportunity, determine what stage it was in at quarter end
+                    let totalACV = 0;
+                    let closedWonACV = 0;
+                    let closedLostACV = 0;
+                    let openACV = 0;
+
+                    sealOpps.forEach(opp => {
+                        const stageAtQuarterEnd = getStageAtDate(opp, quarterInfo.end);
+                        if (stageAtQuarterEnd) {
+                            const acv = parseFloat(opp.fields['1st Year ACV (converted)'] || 0);
+                            totalACV += acv;
+
+                            if (stageAtQuarterEnd.includes('Closed Won')) {
+                                closedWonACV += acv;
+                            } else if (stageAtQuarterEnd.includes('Closed Lost')) {
+                                closedLostACV += acv;
+                            } else {
+                                openACV += acv;
+                            }
+                        }
+                    });
+
+                    const closedWonPct = totalACV > 0 ? (closedWonACV / totalACV) * 100 : 0;
+                    const closedLostPct = totalACV > 0 ? (closedLostACV / totalACV) * 100 : 0;
+                    const openPct = totalACV > 0 ? (openACV / totalACV) * 100 : 0;
+
+                    quarterlyTrend.push({
+                        quarter: quarterInfo.label,
+                        totalACV,
+                        openACV,
+                        closedWonACV,
+                        closedLostACV,
+                        openPct: openPct.toFixed(1),
+                        closedWonPct: closedWonPct.toFixed(1),
+                        closedLostPct: closedLostPct.toFixed(1)
+                    });
+                }
+
+                // Calculate monthly stage progression (for pipeline progression widget)
+                // Uses historical stage dates to show TRUE snapshots of where opps were at each month
+                const monthlyStageProgression = [];
+
+                // Debug: Log stage date fields for first opportunity
+                if (sealOpps.length > 0) {
+                    console.log('=== STAGE DATE FIELDS DEBUG ===');
+                    console.log('First opportunity fields:', Object.keys(sealOpps[0].fields));
+                    console.log('Stage date fields:', {
+                        'STG1 Date': sealOpps[0].fields['STG1 Date'],
+                        'STG2 Date': sealOpps[0].fields['STG2 Date'],
+                        'STG3 Date': sealOpps[0].fields['STG3 Date'],
+                        'STG4 Date': sealOpps[0].fields['STG4 Date'],
+                        'STG5 Date': sealOpps[0].fields['STG5 Date'],
+                        'Close Date': sealOpps[0].fields['Close Date'],
+                        'Current Stage': sealOpps[0].fields['Stage']
+                    });
+                }
+
+                // Now calculate historical snapshots for each month
+                for (let i = 5; i >= 0; i--) {
+                    const monthDate = new Date();
+                    monthDate.setMonth(monthDate.getMonth() - i);
+                    const monthEnd = new Date(monthDate.getFullYear(), monthDate.getMonth() + 1, 0);
+                    monthEnd.setHours(23, 59, 59, 999); // End of day
+
+                    // For each opportunity, determine what stage it was in at month end
+                    const stageData = {};
+                    let oppCount = 0;
+                    sealOpps.forEach(opp => {
+                        const stageAtMonth = getStageAtDate(opp, monthEnd);
+                        if (stageAtMonth) {
+                            if (!stageData[stageAtMonth]) {
+                                stageData[stageAtMonth] = 0;
+                            }
+                            stageData[stageAtMonth] += parseFloat(opp.fields['1st Year ACV (converted)'] || 0);
+                            oppCount++;
+                        }
+                    });
+
+                    monthlyStageProgression.push({
+                        month: monthDate.toLocaleString('default', { month: 'short', year: '2-digit' }),
+                        stages: stageData,
+                        totalOpps: oppCount
+                    });
+                }
+
+                return {
+                    name: sealName,
+                    influence,
+                    closedWon: sealClosedWon,
+                    opps: totalOpps,
+                    closedOpps,
+                    types: sealTypes,
+                    avgDealSize,
+                    winRate,
+                    responseTime: avgResponseTime || 2.5,
+                    stageBreakdown,
+                    quarterlyTrend,
+                    monthlyStageProgression
+                };
+            })
+            .filter(seal => seal.influence > 0) // Only show SEALs with activity
+            .sort((a, b) => b.influence - a.influence); // Sort by influence
+
+            // Filter opportunities by selected SEAL if not 'all'
+            let displayOpps = filteredOpps;
+            let displaySealMetrics = sealMetrics;
+            if (state.selectedSeal && state.selectedSeal !== 'all') {
+                displayOpps = filteredOpps.filter(opp => {
+                    const sealNameField = opp.fields['SEAL Name'];
+                    if (Array.isArray(sealNameField)) {
+                        return sealNameField.some(name => name === state.selectedSeal || name.includes(state.selectedSeal));
+                    } else if (sealNameField) {
+                        return sealNameField === state.selectedSeal || sealNameField.includes(state.selectedSeal);
+                    }
+                    return false;
+                });
+                displaySealMetrics = sealMetrics.filter(seal => seal.name === state.selectedSeal);
+            }
+
+            // Recalculate totals based on filtered opportunities
+            const displayTotalPipeline = displayOpps.reduce((sum, opp) => {
+                return sum + parseFloat(opp.fields['1st Year ACV (converted)'] || 0);
+            }, 0);
+
+            const displayClosedWonOpps = displayOpps.filter(opp =>
+                opp.fields['Stage'] === 'Closed Won' || opp.fields['Stage'] === '8 - Closed Won'
+            );
+            const displayClosedWonACV = displayClosedWonOpps.reduce((sum, opp) => {
+                return sum + parseFloat(opp.fields['1st Year ACV (converted)'] || 0);
+            }, 0);
+
+            const displayConversionRate = displayTotalPipeline > 0 ? displayClosedWonACV / displayTotalPipeline : 0;
+
+            // Calculate monthly breakdown
+            const monthlyGoals = [];
+            const currentDate = new Date();
+            const months = ['Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec', 'Jan'];
+
+            // Dynamically determine years based on start date (fiscal year starts in February)
+            const fiscalStartYear = new Date(state.startDate).getFullYear();
+            const years = [
+                fiscalStartYear, fiscalStartYear, fiscalStartYear, fiscalStartYear,
+                fiscalStartYear, fiscalStartYear, fiscalStartYear, fiscalStartYear,
+                fiscalStartYear, fiscalStartYear, fiscalStartYear, fiscalStartYear + 1
+            ];
+
+            console.log('Monthly breakdown using fiscal year:', fiscalStartYear);
+
+            for (let i = 0; i < 12; i++) {
+                const monthStart = new Date(years[i], i + 1, 1);
+                const monthEnd = new Date(years[i], i + 2, 0);
+
+                const monthOpps = displayOpps.filter(opp => {
+                    const engagementDate = opp.fields['SEAL Engagement Date'] ? new Date(opp.fields['SEAL Engagement Date']) : null;
+                    return engagementDate && engagementDate >= monthStart && engagementDate <= monthEnd;
+                });
+
+                const monthPipeline = monthOpps.reduce((sum, opp) => sum + parseFloat(opp.fields['1st Year ACV (converted)'] || 0), 0);
+                const monthClosedWon = monthOpps
+                    .filter(opp => opp.fields['Stage'] === 'Closed Won' || opp.fields['Stage'] === '8 - Closed Won')
+                    .reduce((sum, opp) => sum + parseFloat(opp.fields['1st Year ACV (converted)'] || 0), 0);
+
+                monthlyGoals.push({
+                    month: `${months[i]} ${years[i]}`,
+                    target: adminSettings.monthlyPipelineTarget,
+                    actual: monthPipeline,
+                    closedWon: monthClosedWon
+                });
+            }
+
+            // Calculate conversion rate
+            const conversionRate = totalPipeline > 0 ? closedWonACV / totalPipeline : 0;
+
+            // Calculate previous period metrics (same date range, one year back)
+            const prevStartDate = new Date(startDate);
+            prevStartDate.setFullYear(prevStartDate.getFullYear() - 1);
+            const prevEndDate = new Date(endDate);
+            prevEndDate.setFullYear(prevEndDate.getFullYear() - 1);
+
+            const prevOpps = opportunities.filter(opp => {
+                const engagementDate = opp.fields['SEAL Engagement Date'] ? new Date(opp.fields['SEAL Engagement Date']) : null;
+                return engagementDate && engagementDate >= prevStartDate && engagementDate <= prevEndDate;
+            });
+
+            const prevPipeline = prevOpps.reduce((sum, opp) => {
+                return sum + parseFloat(opp.fields['1st Year ACV (converted)'] || 0);
+            }, 0);
+
+            const prevClosedWon = prevOpps
+                .filter(opp => opp.fields['Stage'] === 'Closed Won' || opp.fields['Stage'] === '8 - Closed Won')
+                .reduce((sum, opp) => sum + parseFloat(opp.fields['1st Year ACV (converted)'] || 0), 0);
+
+            const prevRequests = requests.filter(req => {
+                const createdDate = req.fields['Created at'] ? new Date(req.fields['Created at']) : null;
+                const requestType = req.fields['Request Type'] || '';
+                const isNotLabs = !requestType.includes('(Labs)');
+                return createdDate && createdDate >= prevStartDate && createdDate <= prevEndDate && isNotLabs;
+            });
+
+            console.log('=== SUMMARY ===');
+            console.log('Total Pipeline:', totalPipeline);
+            console.log('Closed Won ACV:', closedWonACV);
+            console.log('Total Opportunities:', filteredOpps.length);
+            console.log('Requests:', filteredRequests.length);
+            console.log('Events:', eventCount);
+            console.log('SEALs with activity:', sealMetrics.length);
+            console.log('Previous Period Pipeline:', prevPipeline);
+            console.log('Previous Period Closed Won:', prevClosedWon);
+            console.log('===============');
+
+            return {
+                targets: {
+                    totalPipeline: adminSettings.totalPipelineTarget,
+                    sealSourcedStage0: 15,
+                    strategicEvents: adminSettings.strategicEventsTarget,
+                    closedWonConversion: adminSettings.closedWonConversion,
+                    currentPipeline: displayTotalPipeline,
+                    currentClosedWon: displayClosedWonACV,
+                    currentEvents: eventCount,
+                    currentConversion: displayConversionRate
+                },
+                sealTeam: {
+                    totalPipelineInfluenced: displayTotalPipeline,
+                    sealRequests: filteredRequests.length,
+                    totalOppsInfluenced: displayOpps.length,
+                    closedWonACV: displayClosedWonACV,
+                    totalSpend: adminSettings.totalSpend
+                },
+                previousPeriod: {
+                    totalPipelineInfluenced: prevPipeline,
+                    closedWonACV: prevClosedWon,
+                    sealRequests: prevRequests.length
+                },
+                monthlyGoals: monthlyGoals,
+                seals: displaySealMetrics,
+                allSeals: sealMetrics // Keep all SEALs for the filter dropdown
+            };
+        }
+
+        // Fetch from Airtable (if PAT is configured)
+        async function fetchFromAirtable() {
+            const pat = localStorage.getItem('airtable_pat');
+            if (!pat) {
+                console.log('No Airtable PAT configured');
+                return false;
+            }
+
+            state.loading = true;
+            render();
+
+            try {
+                console.log('Fetching data from Airtable...');
+
+                // Fetch all tables in parallel
+                const [opportunities, requests, engagements, seals] = await Promise.all([
+                    fetchAirtableTable('tblqtDoaoBNBvkEGC', 'Opportunities', pat),
+                    fetchAirtableTable('tblgl22l1BJZEHuEG', 'Requests', pat),
+                    fetchAirtableTable('tblqDX9oFP6kbkCyG', 'Engagements', pat),
+                    fetchAirtableTable('tblOQ9esyE7TWdm58', 'SEALs', pat)
+                ]);
+
+                // Process the data
+                const processedData = processAirtableData(opportunities, requests, engagements, seals);
+
+                // Update state
+                state.metrics = processedData;
+                state.usingLiveData = true;
+                state.lastUpdated = new Date();
+
+                console.log('Successfully fetched and processed Airtable data');
+                return true;
+            } catch (error) {
+                console.error('Error fetching from Airtable:', error);
+                alert(`Failed to fetch from Airtable: ${error.message}\n\nPlease check:\n1. Your PAT token is valid\n2. Token has correct scopes (data.records:read, schema.bases:read)\n3. Token has access to base ${AIRTABLE_BASE_ID}\n\nUsing sample data instead.`);
+                state.usingLiveData = false;
+                return false;
+            } finally {
+                state.loading = false;
+                render();
+            }
+        }
+
+        // Show API key configuration modal
+        function showApiKeyModal() {
+            const modal = document.createElement('div');
+            modal.className = 'fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50';
+            modal.innerHTML = `
+                <div class="bg-white rounded-lg p-8 max-w-2xl m-4">
+                    <h2 class="text-2xl font-bold mb-4">Configure Airtable Connection</h2>
+                    <p class="text-gray-600 mb-4">To fetch live data from Airtable, you need to configure your Personal Access Token (PAT).</p>
+                    
+                    <div class="mb-4">
+                        <label class="block text-sm font-medium text-gray-700 mb-2">Airtable Personal Access Token</label>
+                        <input
+                            type="password"
+                            id="pat-input"
+                            placeholder="patXXXXXXXXXXXXXX"
+                            value="${localStorage.getItem('airtable_pat') || ''}"
+                            class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                        />
+                        <p class="text-xs text-gray-500 mt-2">
+                            Paste the shared read-only token provided by your team lead, or create your own at: <a href="https://airtable.com/create/tokens" target="_blank" class="text-blue-600 underline">https://airtable.com/create/tokens</a>
+                        </p>
+                        <p class="text-xs text-gray-500 mt-1">
+                            Required scopes: data.records:read, schema.bases:read
+                        </p>
+                    </div>
+
+                    <div class="bg-yellow-50 border border-yellow-200 rounded-lg p-4 mb-4">
+                        <p class="text-sm text-yellow-800">
+                            <strong>Note:</strong> Your token will be stored in browser localStorage and only used to fetch data from Airtable. Never share your token!
+                        </p>
+                    </div>
+
+                    <div class="flex gap-4">
+                        <button onclick="saveApiKey()" class="flex-1 bg-blue-600 text-white px-6 py-2 rounded-lg hover:bg-blue-700">
+                            Save & Connect
+                        </button>
+                        <button onclick="closeModal()" class="flex-1 bg-gray-300 text-gray-700 px-6 py-2 rounded-lg hover:bg-gray-400">
+                            Use Sample Data
+                        </button>
+                    </div>
+                </div>
+            `;
+            document.body.appendChild(modal);
+            window.currentModal = modal;
+        }
+
+        function saveApiKey() {
+            const input = document.getElementById('pat-input');
+            const token = input.value.trim();
+            if (token) {
+                localStorage.setItem('airtable_pat', token);
+                location.reload();
+            }
+        }
+
+        function closeModal() {
+            if (window.currentModal) {
+                window.currentModal.remove();
+            }
+        }
+
+        // Show Admin Panel
+        function showAdminPanel() {
+            const settings = state.adminSettings;
+            const modal = document.createElement('div');
+            modal.className = 'fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50';
+            modal.innerHTML = `
+                <div class="bg-white rounded-lg p-8 max-w-2xl m-4 max-h-[90vh] overflow-y-auto">
+                    <h2 class="text-2xl font-bold mb-4">⚙️ Admin Panel</h2>
+                    <p class="text-gray-600 mb-6">Configure targets and manual metrics for the dashboard</p>
+
+                    <div class="space-y-4">
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-2">Annual Pipeline Target</label>
+                            <input
+                                type="number"
+                                id="admin-pipeline-target"
+                                value="${settings.totalPipelineTarget}"
+                                class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                            />
+                            <p class="text-xs text-gray-500 mt-1">Total pipeline goal for the fiscal year</p>
+                        </div>
+
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-2">Monthly Pipeline Target</label>
+                            <input
+                                type="number"
+                                id="admin-monthly-target"
+                                value="${settings.monthlyPipelineTarget}"
+                                class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                            />
+                            <p class="text-xs text-gray-500 mt-1">Monthly pipeline goal (typically annual ÷ 12)</p>
+                        </div>
+
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-2">Closed Won Conversion Rate</label>
+                            <input
+                                type="number"
+                                id="admin-conversion"
+                                value="${settings.closedWonConversion}"
+                                step="0.01"
+                                min="0"
+                                max="1"
+                                class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                            />
+                            <p class="text-xs text-gray-500 mt-1">Target conversion rate (0.30 = 30%)</p>
+                        </div>
+
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-2">Strategic Events Target</label>
+                            <input
+                                type="number"
+                                id="admin-events"
+                                value="${settings.strategicEventsTarget}"
+                                class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                            />
+                            <p class="text-xs text-gray-500 mt-1">Number of strategic events planned for the year</p>
+                        </div>
+
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-2">Total SEAL Program Spend</label>
+                            <input
+                                type="number"
+                                id="admin-spend"
+                                value="${settings.totalSpend}"
+                                class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                            />
+                            <p class="text-xs text-gray-500 mt-1">Total budget/spend for SEAL program</p>
+                        </div>
+                    </div>
+
+                    <div class="flex gap-4 mt-8">
+                        <button onclick="saveAdminSettings()" class="flex-1 bg-blue-600 text-white px-6 py-3 rounded-lg hover:bg-blue-700 font-semibold">
+                            💾 Save Settings
+                        </button>
+                        <button onclick="closeModal()" class="flex-1 bg-gray-300 text-gray-700 px-6 py-3 rounded-lg hover:bg-gray-400 font-semibold">
+                            Cancel
+                        </button>
+                    </div>
+                </div>
+            `;
+            document.body.appendChild(modal);
+            window.currentModal = modal;
+        }
+
+        // Save Admin Settings
+        function saveAdminSettings() {
+            const settings = {
+                totalPipelineTarget: parseFloat(document.getElementById('admin-pipeline-target').value),
+                monthlyPipelineTarget: parseFloat(document.getElementById('admin-monthly-target').value),
+                closedWonConversion: parseFloat(document.getElementById('admin-conversion').value),
+                strategicEventsTarget: parseInt(document.getElementById('admin-events').value),
+                totalSpend: parseFloat(document.getElementById('admin-spend').value)
+            };
+
+            // Save to localStorage
+            localStorage.setItem('seal_admin_settings', JSON.stringify(settings));
+
+            // Update state
+            state.adminSettings = settings;
+
+            // Close modal
+            closeModal();
+
+            // Refresh dashboard with new settings
+            if (state.usingLiveData) {
+                fetchFromAirtable();
+            } else {
+                render();
+            }
+
+            alert('✅ Admin settings saved successfully!');
+        }
+
+        // Toggle section
+        function toggleSection(section) {
+            state.expandedSections[section] = !state.expandedSections[section];
+            render();
+        }
+
+        // Main render function
+        function render() {
+            try {
+                console.log('=== RENDER START ===');
+                console.log('State:', state);
+                console.log('Metrics:', state.metrics);
+                console.log('SEALs count:', state.metrics?.seals?.length);
+
+                const { metrics, loading, lastUpdated, expandedSections, usingLiveData, dateRange, startDate, endDate } = state;
+            
+            const pipelineChange = calculateChange(metrics.sealTeam.totalPipelineInfluenced, metrics.previousPeriod.totalPipelineInfluenced);
+            const closedWonChange = calculateChange(metrics.sealTeam.closedWonACV, metrics.previousPeriod.closedWonACV);
+            const requestsChange = calculateChange(metrics.sealTeam.sealRequests, metrics.previousPeriod.sealRequests);
+
+            const pipelineProgress = (metrics.targets.currentPipeline / metrics.targets.totalPipeline) * 100;
+            const closedWonProgress = (metrics.targets.currentClosedWon / (metrics.targets.totalPipeline * metrics.targets.closedWonConversion)) * 100;
+            const eventsProgress = (metrics.targets.currentEvents / metrics.targets.strategicEvents) * 100;
+            const conversionProgress = (metrics.targets.currentConversion / metrics.targets.closedWonConversion) * 100;
+
+            const pipelineROI = metrics.sealTeam.totalPipelineInfluenced / metrics.sealTeam.totalSpend;
+            const closedWonROI = metrics.sealTeam.closedWonACV / metrics.sealTeam.totalSpend;
+            const costPerOpp = metrics.sealTeam.totalSpend / metrics.sealTeam.totalOppsInfluenced;
+            const efficiency = metrics.sealTeam.closedWonACV / metrics.sealTeam.totalPipelineInfluenced;
+
+            document.getElementById('app').innerHTML = `
+                <div class="max-w-7xl mx-auto p-8">
+                    <!-- Header -->
+                    <div class="mb-8">
+                        <div class="flex items-center justify-between mb-4">
+                            <div>
+                                <h1 class="text-4xl font-bold text-white mb-2">SEAL QBR Dashboard</h1>
+                                <p class="text-slate-300">Strategic Executive Advisor & Luminary Program Analytics</p>
+                                <div class="mt-2 flex items-center text-sm">
+                                    <span class="status-indicator ${usingLiveData ? 'status-live' : 'status-sample'}"></span>
+                                    <span class="text-slate-400">${usingLiveData ? 'Live Data from Airtable' : 'Using Sample Data'}</span>
+                                    ${!usingLiveData ? `
+                                        <button onclick="showApiKeyModal()" class="ml-4 text-blue-400 underline hover:text-blue-300">
+                                            Configure Airtable Connection
+                                        </button>
+                                    ` : ''}
+                                </div>
+                            </div>
+                            <div class="flex gap-3">
+                                <button
+                                    onclick="showAdminPanel()"
+                                    class="flex items-center gap-2 px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg transition-colors"
+                                >
+                                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path>
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path>
+                                    </svg>
+                                    Admin
+                                </button>
+                                <button
+                                    onclick="fetchFromAirtable()"
+                                    ${loading ? 'disabled' : ''}
+                                    class="flex items-center gap-2 px-4 py-2 bg-pink-600 hover:bg-pink-700 text-white rounded-lg transition-colors disabled:opacity-50"
+                                >
+                                    <svg class="w-5 h-5 ${loading ? 'loading' : ''}" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path>
+                                    </svg>
+                                    ${loading ? 'Refreshing...' : 'Refresh Data'}
+                                </button>
+                            </div>
+                        </div>
+
+                        <!-- Date Range Filters -->
+                        <div class="bg-slate-800 rounded-lg p-4">
+                            <div class="flex items-center gap-4 flex-wrap">
+                                <div class="flex items-center gap-2">
+                                    <svg class="w-5 h-5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path>
+                                    </svg>
+                                    <span class="text-white font-medium">Date Range:</span>
+                                    <span class="text-slate-400 text-xs">(SEAL Engagement Date)</span>
+                                </div>
+
+                                <select
+                                    value="${dateRange}"
+                                    onchange="changeDateRange(this.value)"
+                                    class="px-4 py-2 bg-slate-700 text-white rounded-lg border border-slate-600 focus:ring-2 focus:ring-pink-500"
+                                >
+                                    ${Object.entries(getDateRanges()).map(([key, range]) =>
+                                        `<option value="${key}" ${dateRange === key ? 'selected' : ''}>${range.label}</option>`
+                                    ).join('')}
+                                </select>
+
+                                ${dateRange === 'custom' ? `
+                                    <input
+                                        type="date"
+                                        value="${startDate}"
+                                        onchange="changeStartDate(this.value)"
+                                        class="px-4 py-2 bg-slate-700 text-white rounded-lg border border-slate-600"
+                                    />
+                                    <span class="text-slate-400">to</span>
+                                    <input
+                                        type="date"
+                                        value="${endDate}"
+                                        onchange="changeEndDate(this.value)"
+                                        class="px-4 py-2 bg-slate-700 text-white rounded-lg border border-slate-600"
+                                    />
+                                ` : ''}
+                            </div>
+
+                            <!-- SEAL Filter -->
+                            <div class="flex items-center gap-4 flex-wrap mt-3 pt-3 border-t border-slate-700">
+                                <div class="flex items-center gap-2">
+                                    <svg class="w-5 h-5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"></path>
+                                    </svg>
+                                    <span class="text-white font-medium">SEAL Filter:</span>
+                                </div>
+
+                                <select
+                                    value="${state.selectedSeal}"
+                                    onchange="changeSealFilter(this.value)"
+                                    class="px-4 py-2 bg-slate-700 text-white rounded-lg border border-slate-600 focus:ring-2 focus:ring-pink-500"
+                                >
+                                    <option value="all">All SEALs</option>
+                                    ${metrics.allSeals && metrics.allSeals.length > 0 ?
+                                        metrics.allSeals.map(seal =>
+                                            `<option value="${seal.name}" ${state.selectedSeal === seal.name ? 'selected' : ''}>${seal.name}</option>`
+                                        ).join('') : ''}
+                                </select>
+
+                                ${state.selectedSeal !== 'all' ? `
+                                    <button
+                                        onclick="changeSealFilter('all')"
+                                        class="text-pink-400 hover:text-pink-300 text-sm underline"
+                                    >
+                                        Clear filter
+                                    </button>
+                                ` : ''}
+
+                                ${lastUpdated ? `
+                                    <span class="text-slate-400 text-sm ml-auto">
+                                        Last updated: ${lastUpdated.toLocaleString()}
+                                    </span>
+                                ` : ''}
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Executive Summary -->
+                    <div class="bg-gradient-to-br from-slate-900 to-blue-900 rounded-xl p-8 shadow-2xl mb-8">
+                        <div class="flex items-center justify-between mb-6">
+                            <div>
+                                <h2 class="text-3xl font-bold text-white mb-2">
+                                    Executive Summary
+                                    ${state.selectedSeal !== 'all' ? `
+                                        <span class="text-pink-400 text-2xl ml-2">• ${state.selectedSeal}</span>
+                                    ` : ''}
+                                </h2>
+                                <p class="text-slate-300">
+                                    ${state.selectedSeal !== 'all' ?
+                                        `Individual Performance for ${state.selectedSeal}` :
+                                        'Period-over-Period Performance Highlights'}
+                                </p>
+                            </div>
+                            <button onclick="toggleSection('executiveSummary')" class="text-white hover:text-slate-300">
+                                <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="${expandedSections.executiveSummary ? 'M5 15l7-7 7 7' : 'M19 9l-7 7-7-7'}"></path>
+                                </svg>
+                            </button>
+                        </div>
+
+                        ${expandedSections.executiveSummary ? `
+                            <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+                                <div class="bg-white/10 backdrop-blur-lg rounded-lg p-6 border border-white/20">
+                                    <div class="flex items-start justify-between mb-3">
+                                        <div>
+                                            <p class="text-slate-300 text-sm mb-1">Total Pipeline Influenced</p>
+                                            <p class="text-4xl font-bold text-white">${formatCurrency(metrics.sealTeam.totalPipelineInfluenced)}</p>
+                                        </div>
+                                        <div class="flex items-center gap-1 text-sm ${pipelineChange.isPositive ? 'text-green-400' : 'text-red-400'}">
+                                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="${pipelineChange.isPositive ? 'M5 10l7-7m0 0l7 7m-7-7v18' : 'M19 14l-7 7m0 0l-7-7m7 7V3'}"></path>
+                                            </svg>
+                                            <span>${pipelineChange.value.toFixed(1)}%</span>
+                                        </div>
+                                    </div>
+                                    <div class="text-slate-400 text-xs">
+                                        vs. previous period: ${formatCurrency(metrics.previousPeriod.totalPipelineInfluenced)}
+                                    </div>
+                                </div>
+
+                                <div class="bg-white/10 backdrop-blur-lg rounded-lg p-6 border border-white/20">
+                                    <div class="flex items-start justify-between mb-3">
+                                        <div>
+                                            <p class="text-slate-300 text-sm mb-1">Closed Won ACV</p>
+                                            <p class="text-4xl font-bold text-white">${formatCurrency(metrics.sealTeam.closedWonACV)}</p>
+                                        </div>
+                                        <div class="flex items-center gap-1 text-sm ${closedWonChange.isPositive ? 'text-green-400' : 'text-red-400'}">
+                                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="${closedWonChange.isPositive ? 'M5 10l7-7m0 0l7 7m-7-7v18' : 'M19 14l-7 7m0 0l-7-7m7 7V3'}"></path>
+                                            </svg>
+                                            <span>${closedWonChange.value.toFixed(1)}%</span>
+                                        </div>
+                                    </div>
+                                    <div class="text-slate-400 text-xs">
+                                        vs. previous period: ${formatCurrency(metrics.previousPeriod.closedWonACV)}
+                                    </div>
+                                </div>
+
+                                <div class="bg-white/10 backdrop-blur-lg rounded-lg p-6 border border-white/20">
+                                    <div class="flex items-start justify-between mb-3">
+                                        <div>
+                                            <p class="text-slate-300 text-sm mb-1">SEAL Requests</p>
+                                            <p class="text-4xl font-bold text-white">${metrics.sealTeam.sealRequests}</p>
+                                        </div>
+                                        <div class="flex items-center gap-1 text-sm ${requestsChange.isPositive ? 'text-green-400' : 'text-red-400'}">
+                                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="${requestsChange.isPositive ? 'M5 10l7-7m0 0l7 7m-7-7v18' : 'M19 14l-7 7m0 0l-7-7m7 7V3'}"></path>
+                                            </svg>
+                                            <span>${requestsChange.value.toFixed(1)}%</span>
+                                        </div>
+                                    </div>
+                                    <div class="text-slate-400 text-xs">
+                                        vs. previous period: ${metrics.previousPeriod.sealRequests}
+                                    </div>
+                                </div>
+                            </div>
+                        ` : ''}
+                    </div>
+
+                    <!-- Goal Progress -->
+                    <div class="bg-white rounded-xl p-8 shadow-lg mb-8">
+                        <div class="flex items-center justify-between mb-6">
+                            <div>
+                                <h2 class="text-2xl font-bold text-gray-900 mb-1">
+                                    FY27 Goal Progress
+                                    ${state.selectedSeal !== 'all' ? `
+                                        <span class="text-pink-600 text-lg ml-2">(${state.selectedSeal})</span>
+                                    ` : ''}
+                                </h2>
+                                <p class="text-gray-600">
+                                    ${state.selectedSeal !== 'all' ?
+                                        `Individual progress for ${state.selectedSeal}` :
+                                        'Track progress against annual targets'}
+                                </p>
+                            </div>
+                            <button onclick="toggleSection('goalProgress')" class="text-gray-600 hover:text-gray-900">
+                                <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="${expandedSections.goalProgress ? 'M5 15l7-7 7 7' : 'M19 9l-7 7-7-7'}"></path>
+                                </svg>
+                            </button>
+                        </div>
+
+                        ${expandedSections.goalProgress ? `
+                            <div class="space-y-6">
+                                <!-- Pipeline Goal -->
+                                <div>
+                                    <div class="flex items-center justify-between mb-2">
+                                        <span class="text-sm font-semibold text-gray-700">Total Pipeline</span>
+                                        <div class="text-right">
+                                            <span class="text-lg font-bold text-gray-900">${formatCurrency(metrics.targets.currentPipeline)}</span>
+                                            <span class="text-sm text-gray-500"> / ${formatCurrency(metrics.targets.totalPipeline)}</span>
+                                            <span class="ml-2 text-sm font-semibold ${pipelineProgress >= 100 ? 'text-green-600' : pipelineProgress >= 75 ? 'text-yellow-600' : 'text-red-600'}">
+                                                ${pipelineProgress.toFixed(0)}%
+                                            </span>
+                                        </div>
+                                    </div>
+                                    <div class="w-full bg-gray-200 rounded-full h-3 overflow-hidden">
+                                        <div class="h-full transition-all duration-500 ${pipelineProgress >= 100 ? 'bg-green-500' : pipelineProgress >= 75 ? 'bg-yellow-500' : 'bg-red-500'}" 
+                                             style="width: ${Math.min(pipelineProgress, 100)}%"></div>
+                                    </div>
+                                </div>
+
+                                <!-- Closed Won Goal -->
+                                <div>
+                                    <div class="flex items-center justify-between mb-2">
+                                        <span class="text-sm font-semibold text-gray-700">Closed Won ACV</span>
+                                        <div class="text-right">
+                                            <span class="text-lg font-bold text-gray-900">${formatCurrency(metrics.targets.currentClosedWon)}</span>
+                                            <span class="text-sm text-gray-500"> / ${formatCurrency(metrics.targets.totalPipeline * metrics.targets.closedWonConversion)}</span>
+                                            <span class="ml-2 text-sm font-semibold ${closedWonProgress >= 100 ? 'text-green-600' : closedWonProgress >= 75 ? 'text-yellow-600' : 'text-red-600'}">
+                                                ${closedWonProgress.toFixed(0)}%
+                                            </span>
+                                        </div>
+                                    </div>
+                                    <div class="w-full bg-gray-200 rounded-full h-3 overflow-hidden">
+                                        <div class="h-full transition-all duration-500 ${closedWonProgress >= 100 ? 'bg-green-500' : closedWonProgress >= 75 ? 'bg-yellow-500' : 'bg-red-500'}" 
+                                             style="width: ${Math.min(closedWonProgress, 100)}%"></div>
+                                    </div>
+                                </div>
+
+                                <!-- Events Goal -->
+                                <div>
+                                    <div class="flex items-center justify-between mb-2">
+                                        <span class="text-sm font-semibold text-gray-700">Strategic Events</span>
+                                        <div class="text-right">
+                                            <span class="text-lg font-bold text-gray-900">${metrics.targets.currentEvents}</span>
+                                            <span class="text-sm text-gray-500"> / ${metrics.targets.strategicEvents}</span>
+                                            <span class="ml-2 text-sm font-semibold ${eventsProgress >= 100 ? 'text-green-600' : eventsProgress >= 75 ? 'text-yellow-600' : 'text-red-600'}">
+                                                ${eventsProgress.toFixed(0)}%
+                                            </span>
+                                        </div>
+                                    </div>
+                                    <div class="w-full bg-gray-200 rounded-full h-3 overflow-hidden">
+                                        <div class="h-full transition-all duration-500 ${eventsProgress >= 100 ? 'bg-green-500' : eventsProgress >= 75 ? 'bg-yellow-500' : 'bg-red-500'}" 
+                                             style="width: ${Math.min(eventsProgress, 100)}%"></div>
+                                    </div>
+                                </div>
+
+                                <!-- Conversion Goal -->
+                                <div>
+                                    <div class="flex items-center justify-between mb-2">
+                                        <span class="text-sm font-semibold text-gray-700">Conversion Rate</span>
+                                        <div class="text-right">
+                                            <span class="text-lg font-bold text-gray-900">${formatPercent(metrics.targets.currentConversion)}</span>
+                                            <span class="text-sm text-gray-500"> / ${formatPercent(metrics.targets.closedWonConversion)}</span>
+                                            <span class="ml-2 text-sm font-semibold ${conversionProgress >= 100 ? 'text-green-600' : conversionProgress >= 75 ? 'text-yellow-600' : 'text-red-600'}">
+                                                ${conversionProgress.toFixed(0)}%
+                                            </span>
+                                        </div>
+                                    </div>
+                                    <div class="w-full bg-gray-200 rounded-full h-3 overflow-hidden">
+                                        <div class="h-full transition-all duration-500 ${conversionProgress >= 100 ? 'bg-green-500' : conversionProgress >= 75 ? 'bg-yellow-500' : 'bg-red-500'}" 
+                                             style="width: ${Math.min(conversionProgress, 100)}%"></div>
+                                    </div>
+                                </div>
+                            </div>
+                        ` : ''}
+                    </div>
+
+                    <!-- Monthly Goals -->
+                    <div class="bg-white rounded-xl p-8 shadow-lg mb-8">
+                        <div class="flex items-center justify-between mb-6">
+                            <div>
+                                <h2 class="text-2xl font-bold text-gray-900 mb-1">
+                                    Monthly Pipeline Targets
+                                    ${state.selectedSeal !== 'all' ? `
+                                        <span class="text-pink-600 text-lg ml-2">(${state.selectedSeal})</span>
+                                    ` : ''}
+                                </h2>
+                                <p class="text-gray-600">
+                                    ${state.selectedSeal !== 'all' ?
+                                        `Monthly breakdown for ${state.selectedSeal}` :
+                                        'Track monthly progress'}
+                                </p>
+                            </div>
+                            <button onclick="toggleSection('monthlyGoals')" class="text-gray-600 hover:text-gray-900">
+                                <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="${expandedSections.monthlyGoals ? 'M5 15l7-7 7 7' : 'M19 9l-7 7-7-7'}"></path>
+                                </svg>
+                            </button>
+                        </div>
+
+                        ${expandedSections.monthlyGoals ? `
+                            <div class="overflow-x-auto">
+                                <table class="w-full">
+                                    <thead>
+                                        <tr class="border-b-2 border-gray-300">
+                                            <th class="text-left py-3 px-4 text-sm font-semibold text-gray-700">Month</th>
+                                            <th class="text-right py-3 px-4 text-sm font-semibold text-gray-700">Target</th>
+                                            <th class="text-right py-3 px-4 text-sm font-semibold text-gray-700">Actual</th>
+                                            <th class="text-right py-3 px-4 text-sm font-semibold text-gray-700">Closed Won</th>
+                                            <th class="text-center py-3 px-4 text-sm font-semibold text-gray-700">Progress</th>
+                                            <th class="text-right py-3 px-4 text-sm font-semibold text-gray-700">% to Goal</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        ${metrics.monthlyGoals.map((month) => {
+                                            const progress = (month.actual / month.target) * 100;
+                                            const isComplete = month.actual > 0;
+                                            return `
+                                                <tr class="border-b border-gray-200 hover:bg-gray-50 ${!isComplete ? 'opacity-50' : ''}">
+                                                    <td class="py-3 px-4 text-sm font-medium text-gray-900">${month.month}</td>
+                                                    <td class="py-3 px-4 text-sm text-right text-gray-700">${formatCurrency(month.target)}</td>
+                                                    <td class="py-3 px-4 text-sm text-right font-semibold text-gray-900">${month.actual > 0 ? formatCurrency(month.actual) : '-'}</td>
+                                                    <td class="py-3 px-4 text-sm text-right text-green-600 font-semibold">${month.closedWon > 0 ? formatCurrency(month.closedWon) : '-'}</td>
+                                                    <td class="py-3 px-4">
+                                                        <div class="w-24 mx-auto bg-gray-200 rounded-full h-2 overflow-hidden">
+                                                            <div class="${progress >= 100 ? 'bg-green-500' : progress >= 75 ? 'bg-yellow-500' : 'bg-red-500'} h-full" 
+                                                                 style="width: ${Math.min(progress, 100)}%"></div>
+                                                        </div>
+                                                    </td>
+                                                    <td class="py-3 px-4 text-sm text-right font-bold ${progress >= 100 ? 'text-green-600' : progress >= 75 ? 'text-yellow-600' : 'text-red-600'}">
+                                                        ${month.actual > 0 ? `${progress.toFixed(0)}%` : '-'}
+                                                    </td>
+                                                </tr>
+                                            `;
+                                        }).join('')}
+                                    </tbody>
+                                </table>
+                            </div>
+                        ` : ''}
+                    </div>
+
+                    <!-- Individual SEAL Performance -->
+                    <div class="bg-white rounded-xl p-8 shadow-lg mb-8">
+                        <div class="flex items-center justify-between mb-6">
+                            <div>
+                                <h2 class="text-2xl font-bold text-gray-900 mb-1">
+                                    Individual SEAL Performance
+                                    ${state.selectedSeal !== 'all' ? `
+                                        <span class="text-pink-600 text-lg ml-2">(Filtered: ${state.selectedSeal})</span>
+                                    ` : ''}
+                                </h2>
+                                <p class="text-gray-600">
+                                    ${state.selectedSeal !== 'all' ?
+                                        `Detailed metrics for ${state.selectedSeal}` :
+                                        'YTD metrics for each advisor'}
+                                </p>
+                            </div>
+                            <button onclick="toggleSection('sealPerformance')" class="text-gray-600 hover:text-gray-900">
+                                <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="${expandedSections.sealPerformance ? 'M5 15l7-7 7 7' : 'M19 9l-7 7-7-7'}"></path>
+                                </svg>
+                            </button>
+                        </div>
+
+                        ${expandedSections.sealPerformance ? `
+                            <div class="overflow-x-auto">
+                                <table class="w-full">
+                                    <thead>
+                                        <tr class="border-b-2 border-gray-300">
+                                            <th class="text-left py-3 px-4 text-sm font-semibold text-gray-700">Rank</th>
+                                            <th class="text-left py-3 px-4 text-sm font-semibold text-gray-700">SEAL Name</th>
+                                            <th class="text-left py-3 px-4 text-sm font-semibold text-gray-700">Type</th>
+                                            <th class="text-right py-3 px-4 text-sm font-semibold text-gray-700">Total Influence</th>
+                                            <th class="text-right py-3 px-4 text-sm font-semibold text-gray-700">Closed Won</th>
+                                            <th class="text-right py-3 px-4 text-sm font-semibold text-gray-700">Win Rate</th>
+                                            <th class="text-right py-3 px-4 text-sm font-semibold text-gray-700">Avg Deal Size</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        ${metrics.seals.map((seal, idx) => {
+                                            const rankColors = idx === 0 ? 'bg-yellow-400 text-yellow-900' :
+                                                             idx === 1 ? 'bg-gray-300 text-gray-700' :
+                                                             idx === 2 ? 'bg-orange-400 text-orange-900' :
+                                                             'bg-gray-100 text-gray-600';
+                                            return `
+                                                <tr class="border-b border-gray-200 hover:bg-gray-50">
+                                                    <td class="py-4 px-4">
+                                                        <div class="w-8 h-8 rounded-full flex items-center justify-center font-bold text-sm ${rankColors}">
+                                                            ${idx + 1}
+                                                        </div>
+                                                    </td>
+                                                    <td class="py-4 px-4 font-semibold text-gray-900">${seal.name}</td>
+                                                    <td class="py-4 px-4">
+                                                        ${seal.types.map(type => {
+                                                            const colors = type === 'Advisor' ? 'bg-pink-100 text-pink-700' :
+                                                                         type === 'Science Board' ? 'bg-yellow-100 text-yellow-700' :
+                                                                         'bg-blue-100 text-blue-700';
+                                                            return `<span class="text-xs px-2 py-1 rounded ${colors} mr-1">${type}</span>`;
+                                                        }).join('')}
+                                                    </td>
+                                                    <td class="py-4 px-4 text-right text-lg font-bold text-gray-900">${formatCurrency(seal.influence)}</td>
+                                                    <td class="py-4 px-4 text-right text-lg font-semibold text-green-600">${formatCurrency(seal.closedWon)}</td>
+                                                    <td class="py-4 px-4 text-right font-semibold ${seal.winRate >= 0.5 ? 'text-green-600' : seal.winRate >= 0.25 ? 'text-yellow-600' : 'text-red-600'}">
+                                                        ${formatPercent(seal.winRate)}
+                                                    </td>
+                                                    <td class="py-4 px-4 text-right text-sm font-medium text-gray-700">${formatCurrency(seal.avgDealSize)}</td>
+                                                </tr>
+                                            `;
+                                        }).join('')}
+                                    </tbody>
+                                </table>
+                            </div>
+                        ` : ''}
+                    </div>
+
+                    <!-- SEAL Performance by Stage -->
+                    <div class="bg-white rounded-xl p-8 shadow-lg mb-8">
+                        <div class="flex items-center justify-between mb-6">
+                            <div>
+                                <h2 class="text-2xl font-bold text-gray-900 mb-1">SEAL Performance by Stage</h2>
+                                <p class="text-gray-600">Opportunity distribution across pipeline stages</p>
+                            </div>
+                            <button onclick="toggleSection('stageBreakdown')" class="text-gray-600 hover:text-gray-900">
+                                <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="${expandedSections.stageBreakdown ? 'M5 15l7-7 7 7' : 'M19 9l-7 7-7-7'}"></path>
+                                </svg>
+                            </button>
+                        </div>
+
+                        ${expandedSections.stageBreakdown ? `
+                            <div class="space-y-6">
+                                ${(metrics.seals && metrics.seals.length > 0) ? metrics.seals.slice(0, 10).map(seal => {
+                                    if (!seal.stageBreakdown || Object.keys(seal.stageBreakdown).length === 0) {
+                                        return `
+                                            <div class="border-b border-gray-200 pb-6 last:border-0">
+                                                <div class="flex items-center justify-between mb-3">
+                                                    <h3 class="text-lg font-semibold text-gray-900">${seal.name}</h3>
+                                                    <span class="text-sm text-gray-600">No stage data</span>
+                                                </div>
+                                            </div>
+                                        `;
+                                    }
+                                    // Sort stages numerically, with Closed Won/Lost at the end
+                                    const stages = Object.entries(seal.stageBreakdown).sort((a, b) => {
+                                        const stageA = a[0];
+                                        const stageB = b[0];
+
+                                        // Extract stage numbers (e.g., "3 - Proposal" -> 3)
+                                        const numA = parseInt(stageA.match(/^(\d+)/)?.[1] || '999');
+                                        const numB = parseInt(stageB.match(/^(\d+)/)?.[1] || '999');
+
+                                        // Put Closed Won/Lost at the end
+                                        const isClosedA = stageA.includes('Closed');
+                                        const isClosedB = stageB.includes('Closed');
+
+                                        if (isClosedA && !isClosedB) return 1;
+                                        if (!isClosedA && isClosedB) return -1;
+                                        if (isClosedA && isClosedB) {
+                                            // Closed Won before Closed Lost
+                                            return stageA.includes('Won') ? -1 : 1;
+                                        }
+
+                                        return numA - numB;
+                                    });
+                                    const totalValue = stages.reduce((sum, [_, data]) => sum + data.value, 0);
+
+                                    return `
+                                        <div class="border-b border-gray-200 pb-6 last:border-0">
+                                            <div class="flex items-center justify-between mb-3">
+                                                <h3 class="text-lg font-semibold text-gray-900">${seal.name}</h3>
+                                                <span class="text-sm text-gray-600">${seal.opps} opportunities</span>
+                                            </div>
+                                            <div class="space-y-2">
+                                                ${stages.map(([stage, data]) => {
+                                                    const percentage = totalValue > 0 ? (data.value / totalValue) * 100 : 0;
+                                                    const isClosedWon = stage === 'Closed Won' || stage === '8 - Closed Won';
+                                                    return `
+                                                        <div>
+                                                            <div class="flex items-center justify-between text-sm mb-1">
+                                                                <span class="font-medium ${isClosedWon ? 'text-green-700' : 'text-gray-700'}">${stage}</span>
+                                                                <span class="text-gray-600">${data.count} opp${data.count !== 1 ? 's' : ''} • ${formatCurrency(data.value)}</span>
+                                                            </div>
+                                                            <div class="w-full bg-gray-200 rounded-full h-2">
+                                                                <div class="${isClosedWon ? 'bg-green-500' : 'bg-blue-500'} h-2 rounded-full transition-all"
+                                                                     style="width: ${percentage}%"></div>
+                                                            </div>
+                                                        </div>
+                                                    `;
+                                                }).join('')}
+                                            </div>
+                                        </div>
+                                    `;
+                                }).join('') : '<p class="text-gray-500 text-center py-8">No SEAL data available</p>'}
+                            </div>
+                        ` : ''}
+                    </div>
+
+                    <!-- Quarterly Conversion Trends -->
+                    <div class="bg-white rounded-xl p-8 shadow-lg mb-8">
+                        <div class="flex items-center justify-between mb-6">
+                            <div>
+                                <h2 class="text-2xl font-bold text-gray-900 mb-1">Quarterly ACV Breakdown</h2>
+                                <p class="text-gray-600">📸 Historical snapshots: Open vs Closed Won vs Closed Lost (% of ACV, Last 5 quarters)</p>
+                            </div>
+                            <button onclick="toggleSection('monthlyTrends')" class="text-gray-600 hover:text-gray-900">
+                                <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="${expandedSections.monthlyTrends ? 'M5 15l7-7 7 7' : 'M19 9l-7 7-7-7'}"></path>
+                                </svg>
+                            </button>
+                        </div>
+
+                        ${expandedSections.monthlyTrends ? `
+                            <div class="overflow-x-auto">
+                                <table class="w-full">
+                                    <thead>
+                                        <tr class="border-b-2 border-gray-300">
+                                            <th class="text-left py-3 px-4 text-sm font-semibold text-gray-700">SEAL Name</th>
+                                            ${metrics.seals.length > 0 && metrics.seals[0].quarterlyTrend ?
+                                                metrics.seals[0].quarterlyTrend.map(q =>
+                                                    `<th class="text-center py-3 px-4 text-sm font-semibold text-gray-700">${q.quarter}</th>`
+                                                ).join('') : ''}
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        ${(metrics.seals && metrics.seals.length > 0) ? metrics.seals.slice(0, 10).map(seal => {
+                                            if (!seal.quarterlyTrend || seal.quarterlyTrend.length === 0) {
+                                                return `
+                                                    <tr class="border-b border-gray-200">
+                                                        <td class="py-3 px-4 font-semibold text-gray-900">${seal.name}</td>
+                                                        <td colspan="5" class="py-3 px-4 text-center text-gray-500">No trend data</td>
+                                                    </tr>
+                                                `;
+                                            }
+                                            return `
+                                                <tr class="border-b border-gray-200 hover:bg-gray-50">
+                                                    <td class="py-3 px-4 font-semibold text-gray-900">${seal.name}</td>
+                                                    ${seal.quarterlyTrend.map(q => {
+                                                        const closedWonPct = parseFloat(q.closedWonPct);
+                                                        const openPct = parseFloat(q.openPct);
+                                                        const closedLostPct = parseFloat(q.closedLostPct);
+                                                        return `
+                                                            <td class="py-3 px-4">
+                                                                <div class="text-xs space-y-1">
+                                                                    <div class="flex items-center justify-between">
+                                                                        <span class="text-gray-600">Open:</span>
+                                                                        <span class="font-semibold text-blue-600">${q.openPct}%</span>
+                                                                    </div>
+                                                                    <div class="flex items-center justify-between">
+                                                                        <span class="text-gray-600">Won:</span>
+                                                                        <span class="font-semibold text-green-600">${q.closedWonPct}%</span>
+                                                                    </div>
+                                                                    <div class="flex items-center justify-between">
+                                                                        <span class="text-gray-600">Lost:</span>
+                                                                        <span class="font-semibold text-red-600">${q.closedLostPct}%</span>
+                                                                    </div>
+                                                                    <div class="text-xs text-gray-400 pt-1 border-t">
+                                                                        ${formatCurrency(q.totalACV)}
+                                                                    </div>
+                                                                </div>
+                                                            </td>
+                                                        `;
+                                                    }).join('')}
+                                                </tr>
+                                            `;
+                                        }).join('') : `
+                                            <tr>
+                                                <td colspan="6" class="py-8 text-center text-gray-500">No SEAL data available</td>
+                                            </tr>
+                                        `}
+                                    </tbody>
+                                </table>
+                            </div>
+                            <div class="mt-4 p-4 bg-blue-50 border border-blue-200 rounded-lg text-sm text-gray-700">
+                                <strong>📊 How to read this (CUMULATIVE snapshots):</strong> Each quarter shows ALL opportunities that had been engaged by the end of that quarter, showing what stage they were in at that time.
+                                <br><br>
+                                <strong>Example:</strong> If Q1 '25 shows 60% Open + 30% Won + 10% Lost, and Q2 '25 shows 45% Open + 45% Won + 10% Lost, this means:
+                                <ul class="list-disc ml-6 mt-2 space-y-1">
+                                    <li>More deals closed won between Q1 and Q2 (30% → 45%)</li>
+                                    <li>The open pipeline decreased as deals converted (60% → 45%)</li>
+                                    <li>These percentages include ALL engaged opportunities up to that quarter, not just new ones</li>
+                                </ul>
+                                <br>
+                                <strong>💡 Watch for:</strong> Closed Won % should grow over time, Open % should decrease as pipeline converts! 🎯
+                            </div>
+                        ` : ''}
+                    </div>
+
+                    <!-- Pipeline Progression by Stage -->
+                    <div class="bg-white rounded-xl p-8 shadow-lg mb-8">
+                        <div class="flex items-center justify-between mb-6">
+                            <div>
+                                <h2 class="text-2xl font-bold text-gray-900 mb-1">Pipeline Progression</h2>
+                                <p class="text-gray-600">📸 Historical snapshots: Shows what stage opportunities were in at the end of each month - track real progression!</p>
+                            </div>
+                        </div>
+
+                        ${metrics.seals && metrics.seals.length > 0 && metrics.seals[0].monthlyStageProgression ? `
+                            <div class="space-y-8">
+                                ${metrics.seals.slice(0, 5).map(seal => {
+                                    if (!seal.monthlyStageProgression || seal.monthlyStageProgression.length === 0) {
+                                        return '';
+                                    }
+
+                                    // Get all unique stages across all months and group by numeric prefix
+                                    const stagesByNumber = {};
+                                    seal.monthlyStageProgression.forEach(month => {
+                                        Object.keys(month.stages).forEach(stage => {
+                                            const stageNum = stage.match(/^(\d+)/)?.[1];
+                                            if (stageNum) {
+                                                if (!stagesByNumber[stageNum]) {
+                                                    stagesByNumber[stageNum] = new Set();
+                                                }
+                                                stagesByNumber[stageNum].add(stage);
+                                            } else if (stage.includes('Closed')) {
+                                                // Handle Closed Won/Lost separately
+                                                if (!stagesByNumber[stage]) {
+                                                    stagesByNumber[stage] = new Set([stage]);
+                                                }
+                                            }
+                                        });
+                                    });
+
+                                    // For each stage number, pick the most descriptive name (non-generic)
+                                    const consolidatedStages = [];
+                                    Object.entries(stagesByNumber).forEach(([key, stageNames]) => {
+                                        const namesArray = Array.from(stageNames);
+                                        // Prefer non-generic names over "X - Stage X"
+                                        const bestName = namesArray.find(name => !name.match(/^\d+ - Stage \d+$/)) || namesArray[0];
+                                        consolidatedStages.push({ key, name: bestName, variants: namesArray });
+                                    });
+
+                                    // Sort stages numerically with Closed Won/Lost at end
+                                    const sortedStages = consolidatedStages.sort((a, b) => {
+                                        const numA = parseInt(a.key.match(/^\d+$/)?.[0] || '999');
+                                        const numB = parseInt(b.key.match(/^\d+$/)?.[0] || '999');
+                                        const isClosedA = a.key.includes('Closed');
+                                        const isClosedB = b.key.includes('Closed');
+                                        if (isClosedA && !isClosedB) return 1;
+                                        if (!isClosedA && isClosedB) return -1;
+                                        if (isClosedA && isClosedB) {
+                                            return a.key.includes('Won') ? -1 : 1;
+                                        }
+                                        return numA - numB;
+                                    });
+
+                                    if (sortedStages.length === 0) return '';
+
+                                    return `
+                                        <div class="border border-gray-200 rounded-lg p-6">
+                                            <h3 class="text-lg font-semibold text-gray-900 mb-4">${seal.name}</h3>
+                                            <div class="overflow-x-auto">
+                                                <table class="w-full text-sm">
+                                                    <thead>
+                                                        <tr class="border-b border-gray-300">
+                                                            <th class="text-left py-2 px-3 font-semibold text-gray-700">Stage</th>
+                                                            ${seal.monthlyStageProgression.map(m =>
+                                                                `<th class="text-right py-2 px-3 font-semibold text-gray-700">${m.month}</th>`
+                                                            ).join('')}
+                                                        </tr>
+                                                    </thead>
+                                                    <tbody>
+                                                        ${sortedStages.map(stageInfo => {
+                                                            const stageName = stageInfo.name;
+                                                            const isClosedWon = stageName.includes('Closed Won');
+                                                            const isClosedLost = stageName.includes('Closed Lost');
+                                                            return `
+                                                                <tr class="border-b border-gray-100 hover:bg-gray-50">
+                                                                    <td class="py-2 px-3 font-medium ${isClosedWon ? 'text-green-700' : isClosedLost ? 'text-red-700' : 'text-gray-900'}">
+                                                                        ${stageName}
+                                                                    </td>
+                                                                    ${seal.monthlyStageProgression.map(month => {
+                                                                        // Sum all variants of this stage number
+                                                                        const acv = stageInfo.variants.reduce((sum, variant) => {
+                                                                            return sum + (month.stages[variant] || 0);
+                                                                        }, 0);
+                                                                        return `
+                                                                            <td class="py-2 px-3 text-right ${acv > 0 ? 'font-semibold' : 'text-gray-400'}">
+                                                                                ${acv > 0 ? formatCurrency(acv) : '-'}
+                                                                            </td>
+                                                                        `;
+                                                                    }).join('')}
+                                                                </tr>
+                                                            `;
+                                                        }).join('')}
+                                                        <tr class="border-t-2 border-gray-300 font-bold bg-gray-50">
+                                                            <td class="py-2 px-3 text-gray-900">Total</td>
+                                                            ${seal.monthlyStageProgression.map(month => {
+                                                                const total = Object.values(month.stages).reduce((sum, val) => sum + val, 0);
+                                                                return `
+                                                                    <td class="py-2 px-3 text-right text-gray-900">
+                                                                        ${total > 0 ? formatCurrency(total) : '-'}
+                                                                    </td>
+                                                                `;
+                                                            }).join('')}
+                                                        </tr>
+                                                    </tbody>
+                                                </table>
+                                            </div>
+                                            <div class="mt-4 p-3 bg-green-50 border border-green-200 rounded text-xs text-gray-700">
+                                                <strong>📊 How to read this (TRUE historical snapshots):</strong> Each column shows where opportunities stood at the END of that month.
+                                                Numbers DON'T change once the month ends - they're frozen in time!
+                                                <br><br>
+                                                <strong>Example:</strong> If $100K is in Stage 3 in Sept, and Oct shows $50K in Stage 3 + $50K in Stage 5, you can see that $50K progressed from Stage 3 → Stage 5.
+                                                <br><br>
+                                                Watch Closed Won grow month-over-month to see cumulative conversions! 🎯
+                                            </div>
+                                        </div>
+                                    `;
+                                }).join('')}
+                            </div>
+                        ` : '<p class="text-gray-500 text-center py-8">No pipeline progression data available</p>'}
+                    </div>
+
+                    <!-- Enhanced ROI -->
+                    <div class="bg-white rounded-xl p-8 shadow-lg mb-8">
+                        <h2 class="text-2xl font-bold text-gray-900 mb-6">Enhanced ROI & Efficiency Metrics</h2>
+                        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                            <div class="text-center p-6 bg-gradient-to-br from-green-50 to-green-100 rounded-lg border-2 border-green-200">
+                                <p class="text-gray-700 text-sm font-semibold mb-3">Pipeline ROI</p>
+                                <p class="text-5xl font-bold text-green-700 mb-2">$${pipelineROI.toFixed(1)}</p>
+                                <p class="text-sm text-gray-600">pipeline influenced per $1 spent</p>
+                            </div>
+                            <div class="text-center p-6 bg-gradient-to-br from-blue-50 to-blue-100 rounded-lg border-2 border-blue-200">
+                                <p class="text-gray-700 text-sm font-semibold mb-3">Closed Won ROI</p>
+                                <p class="text-5xl font-bold text-blue-700 mb-2">$${closedWonROI.toFixed(2)}</p>
+                                <p class="text-sm text-gray-600">revenue per $1 invested</p>
+                            </div>
+                            <div class="text-center p-6 bg-gradient-to-br from-purple-50 to-purple-100 rounded-lg border-2 border-purple-200">
+                                <p class="text-gray-700 text-sm font-semibold mb-3">Conversion Efficiency</p>
+                                <p class="text-5xl font-bold text-purple-700 mb-2">${formatPercent(efficiency)}</p>
+                                <p class="text-sm text-gray-600">of influenced pipeline closed</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Footer -->
+                    <div class="bg-slate-700 rounded-lg p-4 text-sm text-slate-300">
+                        <p class="font-semibold mb-2">Dashboard Information:</p>
+                        <p class="text-slate-400">
+                            ${usingLiveData ? 
+                                `✅ Connected to Airtable base: ${AIRTABLE_BASE_ID}` :
+                                '⚠️ Using sample data - Only February 2026 has actuals (current month)'
+                            }
+                        </p>
+                    </div>
+                </div>
+            `;
+            console.log('=== RENDER COMPLETE ===');
+            } catch (error) {
+                console.error('=== RENDER ERROR ===', error);
+                document.getElementById('app').innerHTML = `
+                    <div class="max-w-7xl mx-auto p-8">
+                        <div class="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded">
+                            <h2 class="font-bold text-lg mb-2">Dashboard Error</h2>
+                            <p>An error occurred while rendering the dashboard:</p>
+                            <pre class="mt-2 text-sm">${error.message}\n${error.stack}</pre>
+                            <button onclick="location.reload()" class="mt-4 bg-red-600 text-white px-4 py-2 rounded">
+                                Reload Dashboard
+                            </button>
+                        </div>
+                    </div>
+                `;
+            }
+        }
+
+        // Initial render
+        render();
+
+        // Check for token in URL parameter (for easy sharing)
+        const urlParams = new URLSearchParams(window.location.search);
+        const tokenParam = urlParams.get('token');
+        if (tokenParam) {
+            localStorage.setItem('airtable_pat', tokenParam);
+            // Remove token from URL for security
+            window.history.replaceState({}, document.title, window.location.pathname);
+            console.log('Token configured from URL parameter');
+        }
+
+        // Check if PAT is configured, if so auto-fetch
+        if (localStorage.getItem('airtable_pat')) {
+            fetchFromAirtable();
+        } else {
+            // Show prompt to configure PAT
+            setTimeout(() => {
+                showApiKeyModal();
+            }, 500);
+        }
+    </script>
+</body>
+</html>
