@@ -38,7 +38,7 @@
             }
             return {
                 totalPipelineTarget: 75000000,
-                closedWonConversion: 0.30,
+                closedWonTarget: 22500000,
                 strategicEventsTarget: 6,
                 monthlyPipelineTarget: 6250000,
                 totalSpend: 3700000
@@ -61,7 +61,10 @@
                 monthlyGoals: true,
                 sealPerformance: true,
                 stageBreakdown: true,
-                monthlyTrends: true
+                monthlyTrends: true,
+                scienceBoardImpact: true,
+                advisorImpact: true,
+                chroImpact: true
             },
             metrics: getSampleData()
         };
@@ -126,7 +129,7 @@
                     totalPipeline: 75000000,
                     sealSourcedStage0: 15,
                     strategicEvents: 6,
-                    closedWonConversion: 0.30,
+                    closedWonTarget: 22500000,
                     currentPipeline: 8250000, // Only from Feb 2026 so far
                     currentClosedWon: 350000,
                     currentEvents: 2,
@@ -173,6 +176,18 @@
                     { name: 'Jeff Hancock', influence: 1200000, closedWon: 0, opps: 2, closedOpps: 0, types: ['Science Board'], avgDealSize: 600000, winRate: 0, responseTime: 2.8 },
                     { name: 'Rhonda Morris', influence: 560000, closedWon: 190000, opps: 1, closedOpps: 1, types: ['CHRO Luminary', 'Advisor'], avgDealSize: 560000, winRate: 1.0, responseTime: 1.5 },
                     { name: 'Judy Buchholz', influence: 450000, closedWon: 0, opps: 1, closedOpps: 0, types: ['CHRO Luminary'], avgDealSize: 450000, winRate: 0, responseTime: 3.1 }
+                ],
+                scienceBoardImpact: [
+                    { name: 'Marty Seligman', confirmedEngagements: 3, acvInfluence: 3125279, otherActivities: 2 },
+                    { name: 'Jeff Hancock', confirmedEngagements: 2, acvInfluence: 1200000, otherActivities: 4 }
+                ],
+                advisorImpact: [
+                    { name: 'Guillermo Miranda', oppCount: 3, acvInfluence: 2914319, acvClosed: 0, otherActivities: 1 },
+                    { name: 'Rhonda Morris', oppCount: 1, acvInfluence: 560000, acvClosed: 190000, otherActivities: 3 }
+                ],
+                chroImpact: [
+                    { name: 'Rhonda Morris', oppCount: 1, acvInfluence: 560000, acvClosed: 190000, otherActivities: 3 },
+                    { name: 'Judy Buchholz', oppCount: 1, acvInfluence: 450000, acvClosed: 0, otherActivities: 2 }
                 ]
             };
         }
@@ -264,7 +279,7 @@
         }
 
         // Process Airtable data into dashboard metrics
-        function processAirtableData(opportunities, requests, engagements, seals) {
+        function processAirtableData(opportunities, requests, engagements, seals, otherActivities = []) {
             const startDate = new Date(state.startDate);
             const endDate = new Date(state.endDate);
 
@@ -536,28 +551,50 @@
                 // Calculate quarterly ACV trends (last 5 quarters) - using HISTORICAL stages
                 const quarterlyTrend = [];
 
-                // Helper to get quarter info
+                // Helper to get fiscal quarter info (FY starts Feb 1)
+                // Q1 = Feb–Apr, Q2 = May–Jul, Q3 = Aug–Oct, Q4 = Nov–Jan
                 function getQuarterInfo(date) {
                     const year = date.getFullYear();
-                    const month = date.getMonth();
-                    const quarter = Math.floor(month / 3) + 1;
+                    const month = date.getMonth(); // 0-indexed
 
-                    // Calculate quarter start and end
-                    const quarterStartMonth = (quarter - 1) * 3;
-                    const quarterStart = new Date(year, quarterStartMonth, 1);
-                    const quarterEnd = new Date(year, quarterStartMonth + 3, 0);
+                    let fiscalQ, fiscalYear, qStartMonth, qStartYear, qEndMonth, qEndYear;
+
+                    if (month === 0) { // January → Q4 of current FY
+                        fiscalQ = 4; fiscalYear = year;
+                        qStartMonth = 10; qStartYear = year - 1;
+                        qEndMonth = 0; qEndYear = year;
+                    } else if (month <= 3) { // Feb–Apr → Q1
+                        fiscalQ = 1; fiscalYear = year + 1;
+                        qStartMonth = 1; qStartYear = year;
+                        qEndMonth = 3; qEndYear = year;
+                    } else if (month <= 6) { // May–Jul → Q2
+                        fiscalQ = 2; fiscalYear = year + 1;
+                        qStartMonth = 4; qStartYear = year;
+                        qEndMonth = 6; qEndYear = year;
+                    } else if (month <= 9) { // Aug–Oct → Q3
+                        fiscalQ = 3; fiscalYear = year + 1;
+                        qStartMonth = 7; qStartYear = year;
+                        qEndMonth = 9; qEndYear = year;
+                    } else { // Nov–Dec → Q4
+                        fiscalQ = 4; fiscalYear = year + 1;
+                        qStartMonth = 10; qStartYear = year;
+                        qEndMonth = 0; qEndYear = year + 1;
+                    }
+
+                    const quarterStart = new Date(qStartYear, qStartMonth, 1);
+                    const quarterEnd = new Date(qEndYear, qEndMonth + 1, 0);
                     quarterEnd.setHours(23, 59, 59, 999);
 
                     return {
-                        label: `Q${quarter} '${year.toString().slice(-2)}`,
+                        label: `Q${fiscalQ} FY${fiscalYear.toString().slice(-2)}`,
                         start: quarterStart,
                         end: quarterEnd
                     };
                 }
 
-                // Get current quarter and go back 4 more (5 total)
+                // Get current fiscal quarter and go back 3 more (4 total)
                 const today = new Date();
-                for (let i = 4; i >= 0; i--) {
+                for (let i = 3; i >= 0; i--) {
                     // Calculate date i quarters ago
                     const quarterDate = new Date(today);
                     quarterDate.setMonth(today.getMonth() - (i * 3));
@@ -642,8 +679,10 @@
                         }
                     });
 
+                    const monthFiscalYear = monthDate.getMonth() === 0 ? monthDate.getFullYear() : monthDate.getFullYear() + 1;
+                    const monthLabel = monthDate.toLocaleString('default', { month: 'short' }) + ` FY${monthFiscalYear.toString().slice(-2)}`;
                     monthlyStageProgression.push({
-                        month: monthDate.toLocaleString('default', { month: 'short', year: '2-digit' }),
+                        month: monthLabel,
                         stages: stageData,
                         totalOpps: oppCount
                     });
@@ -774,12 +813,126 @@
             console.log('Previous Period Closed Won:', prevClosedWon);
             console.log('===============');
 
+            // CHRO Luminary impact
+            const chroMembers = seals.filter(seal => {
+                const sealType = seal.fields['SEAL Type'] || seal.fields['Type'] || '';
+                const types = Array.isArray(sealType) ? sealType : [sealType];
+                return types.some(t => typeof t === 'string' && t.includes('CHRO'));
+            });
+
+            const chroImpact = chroMembers.map(seal => {
+                const sealId = seal.id;
+                const sealName = seal.fields['Full name'];
+
+                const memberOpps = filteredOpps.filter(opp => {
+                    const sealNameField = opp.fields['SEAL Name'];
+                    if (Array.isArray(sealNameField)) return sealNameField.some(n => n === sealName || n.includes(sealName));
+                    return sealNameField === sealName || (sealNameField && sealNameField.includes(sealName));
+                });
+
+                const memberACV = memberOpps.reduce((sum, opp) => sum + parseFloat(opp.fields['1st Year ACV (converted)'] || 0), 0);
+                const memberClosedWon = memberOpps
+                    .filter(opp => opp.fields['Stage'] === 'Closed Won' || opp.fields['Stage'] === '8 - Closed Won')
+                    .reduce((sum, opp) => sum + parseFloat(opp.fields['1st Year ACV (converted)'] || 0), 0);
+
+                const memberOtherActivities = otherActivities.filter(act => {
+                    const actSeal = act.fields['Select your name (Other activities)'];
+                    const actDate = act.fields['Activity Date'] ? new Date(act.fields['Activity Date']) : null;
+                    return actDate && actDate >= startDate && actDate <= endDate &&
+                           Array.isArray(actSeal) && actSeal.includes(sealId);
+                });
+
+                return {
+                    name: sealName,
+                    oppCount: memberOpps.length,
+                    acvInfluence: memberACV,
+                    acvClosed: memberClosedWon,
+                    otherActivities: memberOtherActivities.length
+                };
+            });
+
+            // Advisor impact
+            const advisorMembers = seals.filter(seal => {
+                const sealType = seal.fields['SEAL Type'] || seal.fields['Type'] || '';
+                const types = Array.isArray(sealType) ? sealType : [sealType];
+                return types.some(t => typeof t === 'string' && t.includes('Advisor'));
+            });
+
+            const advisorImpact = advisorMembers.map(seal => {
+                const sealId = seal.id;
+                const sealName = seal.fields['Full name'];
+
+                const memberOpps = filteredOpps.filter(opp => {
+                    const sealNameField = opp.fields['SEAL Name'];
+                    if (Array.isArray(sealNameField)) return sealNameField.some(n => n === sealName || n.includes(sealName));
+                    return sealNameField === sealName || (sealNameField && sealNameField.includes(sealName));
+                });
+
+                const memberACV = memberOpps.reduce((sum, opp) => sum + parseFloat(opp.fields['1st Year ACV (converted)'] || 0), 0);
+                const memberClosedWon = memberOpps
+                    .filter(opp => opp.fields['Stage'] === 'Closed Won' || opp.fields['Stage'] === '8 - Closed Won')
+                    .reduce((sum, opp) => sum + parseFloat(opp.fields['1st Year ACV (converted)'] || 0), 0);
+
+                const memberOtherActivities = otherActivities.filter(act => {
+                    const actSeal = act.fields['Select your name (Other activities)'];
+                    const actDate = act.fields['Activity Date'] ? new Date(act.fields['Activity Date']) : null;
+                    return actDate && actDate >= startDate && actDate <= endDate &&
+                           Array.isArray(actSeal) && actSeal.includes(sealId);
+                });
+
+                return {
+                    name: sealName,
+                    oppCount: memberOpps.length,
+                    acvInfluence: memberACV,
+                    acvClosed: memberClosedWon,
+                    otherActivities: memberOtherActivities.length
+                };
+            });
+
+            // Science Board impact
+            const scienceBoardMembers = seals.filter(seal => {
+                const sealType = seal.fields['SEAL Type'] || seal.fields['Type'] || '';
+                const types = Array.isArray(sealType) ? sealType : [sealType];
+                return types.some(t => typeof t === 'string' && t.includes('Science Board'));
+            });
+
+            const scienceBoardImpact = scienceBoardMembers.map(seal => {
+                const sealId = seal.id;
+                const sealName = seal.fields['Full name'];
+
+                const memberEngagements = filteredEngagements.filter(eng => {
+                    const confirmed = eng.fields['SEAL Confirmed'];
+                    return Array.isArray(confirmed) && confirmed.includes(sealId);
+                });
+
+                const memberOpps = filteredOpps.filter(opp => {
+                    const sealNameField = opp.fields['SEAL Name'];
+                    if (Array.isArray(sealNameField)) return sealNameField.some(n => n === sealName || n.includes(sealName));
+                    return sealNameField === sealName || (sealNameField && sealNameField.includes(sealName));
+                });
+                const memberACV = memberOpps.reduce((sum, opp) => sum + parseFloat(opp.fields['1st Year ACV (converted)'] || 0), 0);
+
+                const memberOtherActivities = otherActivities.filter(act => {
+                    const actSeal = act.fields['Select your name (Other activities)'];
+                    const actDate = act.fields['Activity Date'] ? new Date(act.fields['Activity Date']) : null;
+                    return actDate && actDate >= startDate && actDate <= endDate &&
+                           Array.isArray(actSeal) && actSeal.includes(sealId);
+                });
+
+                return {
+                    name: sealName,
+                    confirmedEngagements: memberEngagements.length,
+                    acvInfluence: memberACV,
+                    otherActivities: memberOtherActivities.length
+                };
+            });
+
             return {
                 targets: {
                     totalPipeline: adminSettings.totalPipelineTarget,
                     sealSourcedStage0: 15,
                     strategicEvents: adminSettings.strategicEventsTarget,
-                    closedWonConversion: adminSettings.closedWonConversion,
+                    closedWonTarget: adminSettings.closedWonTarget,
                     currentPipeline: displayTotalPipeline,
                     currentClosedWon: displayClosedWonACV,
                     currentEvents: eventCount,
@@ -799,7 +952,10 @@
                 },
                 monthlyGoals: monthlyGoals,
                 seals: displaySealMetrics,
-                allSeals: sealMetrics // Keep all SEALs for the filter dropdown
+                allSeals: sealMetrics, // Keep all SEALs for the filter dropdown
+                scienceBoardImpact,
+                advisorImpact,
+                chroImpact
             };
         }
 
@@ -818,15 +974,16 @@
                 console.log('Fetching data from Airtable...');
 
                 // Fetch all tables in parallel
-                const [opportunities, requests, engagements, seals] = await Promise.all([
+                const [opportunities, requests, engagements, seals, otherActivities] = await Promise.all([
                     fetchAirtableTable('tblqtDoaoBNBvkEGC', 'Opportunities', pat),
                     fetchAirtableTable('tblgl22l1BJZEHuEG', 'Requests', pat),
                     fetchAirtableTable('tblqDX9oFP6kbkCyG', 'Engagements', pat),
-                    fetchAirtableTable('tblOQ9esyE7TWdm58', 'SEALs', pat)
+                    fetchAirtableTable('tblOQ9esyE7TWdm58', 'SEALs', pat),
+                    fetchAirtableTable('tblh2XURhlIZO5MnY', 'OtherActivities', pat)
                 ]);
 
                 // Process the data
-                const processedData = processAirtableData(opportunities, requests, engagements, seals);
+                const processedData = processAirtableData(opportunities, requests, engagements, seals, otherActivities);
 
                 // Update state
                 state.metrics = processedData;
@@ -941,17 +1098,14 @@
                         </div>
 
                         <div>
-                            <label class="block text-sm font-medium text-gray-700 mb-2">Closed Won Conversion Rate</label>
+                            <label class="block text-sm font-medium text-gray-700 mb-2">Closed Won ACV Target</label>
                             <input
                                 type="number"
-                                id="admin-conversion"
-                                value="${settings.closedWonConversion}"
-                                step="0.01"
-                                min="0"
-                                max="1"
+                                id="admin-closed-won-target"
+                                value="${settings.closedWonTarget}"
                                 class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
                             />
-                            <p class="text-xs text-gray-500 mt-1">Target conversion rate (0.30 = 30%)</p>
+                            <p class="text-xs text-gray-500 mt-1">Closed Won ACV goal for the fiscal year</p>
                         </div>
 
                         <div>
@@ -996,7 +1150,7 @@
             const settings = {
                 totalPipelineTarget: parseFloat(document.getElementById('admin-pipeline-target').value),
                 monthlyPipelineTarget: parseFloat(document.getElementById('admin-monthly-target').value),
-                closedWonConversion: parseFloat(document.getElementById('admin-conversion').value),
+                closedWonTarget: parseFloat(document.getElementById('admin-closed-won-target').value),
                 strategicEventsTarget: parseInt(document.getElementById('admin-events').value),
                 totalSpend: parseFloat(document.getElementById('admin-spend').value)
             };
@@ -1041,9 +1195,8 @@
             const requestsChange = calculateChange(metrics.sealTeam.sealRequests, metrics.previousPeriod.sealRequests);
 
             const pipelineProgress = (metrics.targets.currentPipeline / metrics.targets.totalPipeline) * 100;
-            const closedWonProgress = (metrics.targets.currentClosedWon / (metrics.targets.totalPipeline * metrics.targets.closedWonConversion)) * 100;
+            const closedWonProgress = (metrics.targets.currentClosedWon / metrics.targets.closedWonTarget) * 100;
             const eventsProgress = (metrics.targets.currentEvents / metrics.targets.strategicEvents) * 100;
-            const conversionProgress = (metrics.targets.currentConversion / metrics.targets.closedWonConversion) * 100;
 
             const pipelineROI = metrics.sealTeam.totalPipelineInfluenced / metrics.sealTeam.totalSpend;
             const closedWonROI = metrics.sealTeam.closedWonACV / metrics.sealTeam.totalSpend;
@@ -1300,7 +1453,7 @@
                                         <span class="text-sm font-semibold text-gray-700">Closed Won ACV</span>
                                         <div class="text-right">
                                             <span class="text-lg font-bold text-gray-900">${formatCurrency(metrics.targets.currentClosedWon)}</span>
-                                            <span class="text-sm text-gray-500"> / ${formatCurrency(metrics.targets.totalPipeline * metrics.targets.closedWonConversion)}</span>
+                                            <span class="text-sm text-gray-500"> / ${formatCurrency(metrics.targets.closedWonTarget)}</span>
                                             <span class="ml-2 text-sm font-semibold ${closedWonProgress >= 100 ? 'text-green-600' : closedWonProgress >= 75 ? 'text-yellow-600' : 'text-red-600'}">
                                                 ${closedWonProgress.toFixed(0)}%
                                             </span>
@@ -1330,23 +1483,6 @@
                                     </div>
                                 </div>
 
-                                <!-- Conversion Goal -->
-                                <div>
-                                    <div class="flex items-center justify-between mb-2">
-                                        <span class="text-sm font-semibold text-gray-700">Conversion Rate</span>
-                                        <div class="text-right">
-                                            <span class="text-lg font-bold text-gray-900">${formatPercent(metrics.targets.currentConversion)}</span>
-                                            <span class="text-sm text-gray-500"> / ${formatPercent(metrics.targets.closedWonConversion)}</span>
-                                            <span class="ml-2 text-sm font-semibold ${conversionProgress >= 100 ? 'text-green-600' : conversionProgress >= 75 ? 'text-yellow-600' : 'text-red-600'}">
-                                                ${conversionProgress.toFixed(0)}%
-                                            </span>
-                                        </div>
-                                    </div>
-                                    <div class="w-full bg-gray-200 rounded-full h-3 overflow-hidden">
-                                        <div class="h-full transition-all duration-500 ${conversionProgress >= 100 ? 'bg-green-500' : conversionProgress >= 75 ? 'bg-yellow-500' : 'bg-red-500'}" 
-                                             style="width: ${Math.min(conversionProgress, 100)}%"></div>
-                                    </div>
-                                </div>
                             </div>
                         ` : ''}
                     </div>
@@ -1571,12 +1707,224 @@
                         ` : ''}
                     </div>
 
+                    <!-- Science Board Impact -->
+                    ${(() => {
+                        const sb = metrics.scienceBoardImpact || [];
+                        const totalEngagements = sb.reduce((s, m) => s + m.confirmedEngagements, 0);
+                        const totalACV = sb.reduce((s, m) => s + m.acvInfluence, 0);
+                        const totalOther = sb.reduce((s, m) => s + m.otherActivities, 0);
+                        return `
+                        <div class="bg-white rounded-xl p-8 shadow-lg mb-8">
+                            <div class="flex items-center justify-between mb-6">
+                                <div>
+                                    <h2 class="text-2xl font-bold text-gray-900 mb-1">Science Board Impact</h2>
+                                    <p class="text-gray-600">Confirmed engagements, ACV influence, and other activities for Science Board members</p>
+                                </div>
+                                <button onclick="toggleSection('scienceBoardImpact')" class="text-gray-600 hover:text-gray-900">
+                                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="${expandedSections.scienceBoardImpact ? 'M5 15l7-7 7 7' : 'M19 9l-7 7-7-7'}"></path>
+                                    </svg>
+                                </button>
+                            </div>
+
+                            <!-- Summary tiles (always visible) -->
+                            <div class="grid grid-cols-3 gap-6 ${expandedSections.scienceBoardImpact ? 'mb-8' : ''}">
+                                <div class="bg-yellow-50 border border-yellow-200 rounded-xl p-5 text-center">
+                                    <div class="text-3xl font-bold text-yellow-700">${totalEngagements}</div>
+                                    <div class="text-sm font-medium text-yellow-600 mt-1">Confirmed Engagements</div>
+                                </div>
+                                <div class="bg-yellow-50 border border-yellow-200 rounded-xl p-5 text-center">
+                                    <div class="text-3xl font-bold text-yellow-700">${formatCurrency(totalACV)}</div>
+                                    <div class="text-sm font-medium text-yellow-600 mt-1">ACV Influenced</div>
+                                </div>
+                                <div class="bg-yellow-50 border border-yellow-200 rounded-xl p-5 text-center">
+                                    <div class="text-3xl font-bold text-yellow-700">${totalOther}</div>
+                                    <div class="text-sm font-medium text-yellow-600 mt-1">Other Activities</div>
+                                </div>
+                            </div>
+
+                            <!-- Per-member table (collapsible) -->
+                            ${expandedSections.scienceBoardImpact ? `
+                            ${sb.length > 0 ? `
+                            <div class="overflow-x-auto">
+                                <table class="w-full">
+                                    <thead>
+                                        <tr class="border-b-2 border-gray-300">
+                                            <th class="text-left py-3 px-4 text-sm font-semibold text-gray-700">Member</th>
+                                            <th class="text-center py-3 px-4 text-sm font-semibold text-gray-700">Confirmed Engagements</th>
+                                            <th class="text-center py-3 px-4 text-sm font-semibold text-gray-700">ACV Influence</th>
+                                            <th class="text-center py-3 px-4 text-sm font-semibold text-gray-700">Other Activities</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        ${sb.map(member => `
+                                            <tr class="border-b border-gray-200 hover:bg-gray-50">
+                                                <td class="py-3 px-4 font-semibold text-gray-900">${member.name}</td>
+                                                <td class="py-3 px-4 text-center text-gray-800">${member.confirmedEngagements}</td>
+                                                <td class="py-3 px-4 text-center text-gray-800">${formatCurrency(member.acvInfluence)}</td>
+                                                <td class="py-3 px-4 text-center text-gray-800">${member.otherActivities}</td>
+                                            </tr>
+                                        `).join('')}
+                                    </tbody>
+                                </table>
+                            </div>
+                            ` : `<p class="text-gray-500 text-center py-8">No Science Board data available for this period.</p>`}
+                            ` : ''}
+                        </div>`;
+                    })()}
+
+                    <!-- Advisor Impact -->
+                    ${(() => {
+                        const adv = metrics.advisorImpact || [];
+                        const totalOpps = adv.reduce((s, m) => s + m.oppCount, 0);
+                        const totalACV = adv.reduce((s, m) => s + m.acvInfluence, 0);
+                        const totalClosed = adv.reduce((s, m) => s + m.acvClosed, 0);
+                        const totalOther = adv.reduce((s, m) => s + m.otherActivities, 0);
+                        return `
+                        <div class="bg-white rounded-xl p-8 shadow-lg mb-8">
+                            <div class="flex items-center justify-between mb-6">
+                                <div>
+                                    <h2 class="text-2xl font-bold text-gray-900 mb-1">Advisor Impact</h2>
+                                    <p class="text-gray-600">Opportunity influence, closed ACV, and other activities for Advisors</p>
+                                </div>
+                                <button onclick="toggleSection('advisorImpact')" class="text-gray-600 hover:text-gray-900">
+                                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="${expandedSections.advisorImpact ? 'M5 15l7-7 7 7' : 'M19 9l-7 7-7-7'}"></path>
+                                    </svg>
+                                </button>
+                            </div>
+
+                            <!-- Summary tiles (always visible) -->
+                            <div class="grid grid-cols-4 gap-6 ${expandedSections.advisorImpact ? 'mb-8' : ''}">
+                                <div class="bg-pink-50 border border-pink-200 rounded-xl p-5 text-center">
+                                    <div class="text-3xl font-bold text-pink-700">${totalOpps}</div>
+                                    <div class="text-sm font-medium text-pink-600 mt-1">Opportunities</div>
+                                </div>
+                                <div class="bg-pink-50 border border-pink-200 rounded-xl p-5 text-center">
+                                    <div class="text-3xl font-bold text-pink-700">${formatCurrency(totalACV)}</div>
+                                    <div class="text-sm font-medium text-pink-600 mt-1">ACV Influenced</div>
+                                </div>
+                                <div class="bg-pink-50 border border-pink-200 rounded-xl p-5 text-center">
+                                    <div class="text-3xl font-bold text-pink-700">${formatCurrency(totalClosed)}</div>
+                                    <div class="text-sm font-medium text-pink-600 mt-1">ACV Closed</div>
+                                </div>
+                                <div class="bg-pink-50 border border-pink-200 rounded-xl p-5 text-center">
+                                    <div class="text-3xl font-bold text-pink-700">${totalOther}</div>
+                                    <div class="text-sm font-medium text-pink-600 mt-1">Other Activities</div>
+                                </div>
+                            </div>
+
+                            <!-- Per-advisor table (collapsible) -->
+                            ${expandedSections.advisorImpact ? `
+                            ${adv.length > 0 ? `
+                            <div class="overflow-x-auto">
+                                <table class="w-full">
+                                    <thead>
+                                        <tr class="border-b-2 border-gray-300">
+                                            <th class="text-left py-3 px-4 text-sm font-semibold text-gray-700">Advisor</th>
+                                            <th class="text-center py-3 px-4 text-sm font-semibold text-gray-700">Opportunities</th>
+                                            <th class="text-center py-3 px-4 text-sm font-semibold text-gray-700">ACV Influenced</th>
+                                            <th class="text-center py-3 px-4 text-sm font-semibold text-gray-700">ACV Closed</th>
+                                            <th class="text-center py-3 px-4 text-sm font-semibold text-gray-700">Other Activities</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        ${adv.map(member => `
+                                            <tr class="border-b border-gray-200 hover:bg-gray-50">
+                                                <td class="py-3 px-4 font-semibold text-gray-900">${member.name}</td>
+                                                <td class="py-3 px-4 text-center text-gray-800">${member.oppCount}</td>
+                                                <td class="py-3 px-4 text-center text-gray-800">${formatCurrency(member.acvInfluence)}</td>
+                                                <td class="py-3 px-4 text-center text-gray-800">${formatCurrency(member.acvClosed)}</td>
+                                                <td class="py-3 px-4 text-center text-gray-800">${member.otherActivities}</td>
+                                            </tr>
+                                        `).join('')}
+                                    </tbody>
+                                </table>
+                            </div>
+                            ` : `<p class="text-gray-500 text-center py-8">No Advisor data available for this period.</p>`}
+                            ` : ''}
+                        </div>`;
+                    })()}
+
+                    <!-- CHRO Growth Luminary Impact -->
+                    ${(() => {
+                        const chro = metrics.chroImpact || [];
+                        const totalOpps = chro.reduce((s, m) => s + m.oppCount, 0);
+                        const totalACV = chro.reduce((s, m) => s + m.acvInfluence, 0);
+                        const totalClosed = chro.reduce((s, m) => s + m.acvClosed, 0);
+                        const totalOther = chro.reduce((s, m) => s + m.otherActivities, 0);
+                        return `
+                        <div class="bg-white rounded-xl p-8 shadow-lg mb-8">
+                            <div class="flex items-center justify-between mb-6">
+                                <div>
+                                    <h2 class="text-2xl font-bold text-gray-900 mb-1">CHRO Growth Luminary Impact</h2>
+                                    <p class="text-gray-600">Opportunity influence, closed ACV, and other activities for CHRO Growth Luminaries</p>
+                                </div>
+                                <button onclick="toggleSection('chroImpact')" class="text-gray-600 hover:text-gray-900">
+                                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="${expandedSections.chroImpact ? 'M5 15l7-7 7 7' : 'M19 9l-7 7-7-7'}"></path>
+                                    </svg>
+                                </button>
+                            </div>
+
+                            <!-- Summary tiles (always visible) -->
+                            <div class="grid grid-cols-4 gap-6 ${expandedSections.chroImpact ? 'mb-8' : ''}">
+                                <div class="bg-blue-50 border border-blue-200 rounded-xl p-5 text-center">
+                                    <div class="text-3xl font-bold text-blue-700">${totalOpps}</div>
+                                    <div class="text-sm font-medium text-blue-600 mt-1">Opportunities</div>
+                                </div>
+                                <div class="bg-blue-50 border border-blue-200 rounded-xl p-5 text-center">
+                                    <div class="text-3xl font-bold text-blue-700">${formatCurrency(totalACV)}</div>
+                                    <div class="text-sm font-medium text-blue-600 mt-1">ACV Influenced</div>
+                                </div>
+                                <div class="bg-blue-50 border border-blue-200 rounded-xl p-5 text-center">
+                                    <div class="text-3xl font-bold text-blue-700">${formatCurrency(totalClosed)}</div>
+                                    <div class="text-sm font-medium text-blue-600 mt-1">ACV Closed</div>
+                                </div>
+                                <div class="bg-blue-50 border border-blue-200 rounded-xl p-5 text-center">
+                                    <div class="text-3xl font-bold text-blue-700">${totalOther}</div>
+                                    <div class="text-sm font-medium text-blue-600 mt-1">Other Activities</div>
+                                </div>
+                            </div>
+
+                            <!-- Per-member table (collapsible) -->
+                            ${expandedSections.chroImpact ? `
+                            ${chro.length > 0 ? `
+                            <div class="overflow-x-auto">
+                                <table class="w-full">
+                                    <thead>
+                                        <tr class="border-b-2 border-gray-300">
+                                            <th class="text-left py-3 px-4 text-sm font-semibold text-gray-700">Luminary</th>
+                                            <th class="text-center py-3 px-4 text-sm font-semibold text-gray-700">Opportunities</th>
+                                            <th class="text-center py-3 px-4 text-sm font-semibold text-gray-700">ACV Influenced</th>
+                                            <th class="text-center py-3 px-4 text-sm font-semibold text-gray-700">ACV Closed</th>
+                                            <th class="text-center py-3 px-4 text-sm font-semibold text-gray-700">Other Activities</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        ${chro.map(member => `
+                                            <tr class="border-b border-gray-200 hover:bg-gray-50">
+                                                <td class="py-3 px-4 font-semibold text-gray-900">${member.name}</td>
+                                                <td class="py-3 px-4 text-center text-gray-800">${member.oppCount}</td>
+                                                <td class="py-3 px-4 text-center text-gray-800">${formatCurrency(member.acvInfluence)}</td>
+                                                <td class="py-3 px-4 text-center text-gray-800">${formatCurrency(member.acvClosed)}</td>
+                                                <td class="py-3 px-4 text-center text-gray-800">${member.otherActivities}</td>
+                                            </tr>
+                                        `).join('')}
+                                    </tbody>
+                                </table>
+                            </div>
+                            ` : `<p class="text-gray-500 text-center py-8">No CHRO Growth Luminary data available for this period.</p>`}
+                            ` : ''}
+                        </div>`;
+                    })()}
+
                     <!-- Quarterly Conversion Trends -->
                     <div class="bg-white rounded-xl p-8 shadow-lg mb-8">
                         <div class="flex items-center justify-between mb-6">
                             <div>
                                 <h2 class="text-2xl font-bold text-gray-900 mb-1">Quarterly ACV Breakdown</h2>
-                                <p class="text-gray-600">📸 Historical snapshots: Open vs Closed Won vs Closed Lost (% of ACV, Last 5 quarters)</p>
+                                <p class="text-gray-600">📸 Historical snapshots: Open vs Closed Won vs Closed Lost (% of ACV, Last 4 fiscal quarters)</p>
                             </div>
                             <button onclick="toggleSection('monthlyTrends')" class="text-gray-600 hover:text-gray-900">
                                 <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
