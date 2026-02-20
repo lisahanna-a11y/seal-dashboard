@@ -29,20 +29,69 @@
     <script>
         // Configuration
         const AIRTABLE_BASE_ID = 'app55vpOMLhznWdHC';
-        
-        // Load admin settings from localStorage
+        const DASHBOARD_CONFIG_TABLE = 'tblMb7Kiv7zxChLNQ';
+        const DASHBOARD_CONFIG_RECORD = 'recSevENlqtzyUG00';
+
+        const DEFAULT_SETTINGS = {
+            totalPipelineTarget: 75000000,
+            closedWonTarget: 15000000,
+            strategicEventsTarget: 6,
+            monthlyPipelineTarget: 6250000,
+            totalSpend: 3700000
+        };
+
+        // Load admin settings — localStorage overrides hardcoded defaults (fallback only)
         function loadAdminSettings() {
             const saved = localStorage.getItem('seal_admin_settings');
-            if (saved) {
-                return JSON.parse(saved);
+            if (saved) return JSON.parse(saved);
+            return { ...DEFAULT_SETTINGS };
+        }
+
+        // Fetch shared config from Airtable and update state + localStorage
+        async function fetchConfigFromAirtable(pat) {
+            try {
+                const url = `https://api.airtable.com/v0/${AIRTABLE_BASE_ID}/${DASHBOARD_CONFIG_TABLE}/${DASHBOARD_CONFIG_RECORD}`;
+                const response = await fetch(url, {
+                    headers: { 'Authorization': `Bearer ${pat}`, 'Content-Type': 'application/json' }
+                });
+                if (!response.ok) return;
+                const data = await response.json();
+                const f = data.fields;
+                const settings = {
+                    totalPipelineTarget: f['Pipeline Target'] ?? DEFAULT_SETTINGS.totalPipelineTarget,
+                    closedWonTarget: f['Closed Won ACV Target'] ?? DEFAULT_SETTINGS.closedWonTarget,
+                    monthlyPipelineTarget: f['Monthly Pipeline Target'] ?? DEFAULT_SETTINGS.monthlyPipelineTarget,
+                    strategicEventsTarget: f['Strategic Events Target'] ?? DEFAULT_SETTINGS.strategicEventsTarget,
+                    totalSpend: f['Total SEAL Program Spend'] ?? DEFAULT_SETTINGS.totalSpend
+                };
+                state.adminSettings = settings;
+                localStorage.setItem('seal_admin_settings', JSON.stringify(settings));
+                console.log('Loaded shared config from Airtable:', settings);
+            } catch (e) {
+                console.warn('Could not load config from Airtable, using local settings:', e);
             }
-            return {
-                totalPipelineTarget: 75000000,
-                closedWonTarget: 15000000,
-                strategicEventsTarget: 6,
-                monthlyPipelineTarget: 6250000,
-                totalSpend: 3700000
-            };
+        }
+
+        // Save config back to Airtable
+        async function saveConfigToAirtable(pat, settings) {
+            try {
+                const url = `https://api.airtable.com/v0/${AIRTABLE_BASE_ID}/${DASHBOARD_CONFIG_TABLE}/${DASHBOARD_CONFIG_RECORD}`;
+                const response = await fetch(url, {
+                    method: 'PATCH',
+                    headers: { 'Authorization': `Bearer ${pat}`, 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ fields: {
+                        'Pipeline Target': settings.totalPipelineTarget,
+                        'Closed Won ACV Target': settings.closedWonTarget,
+                        'Monthly Pipeline Target': settings.monthlyPipelineTarget,
+                        'Strategic Events Target': settings.strategicEventsTarget,
+                        'Total SEAL Program Spend': settings.totalSpend
+                    }})
+                });
+                return response.ok;
+            } catch (e) {
+                console.warn('Could not save config to Airtable:', e);
+                return false;
+            }
         }
 
         // State
@@ -973,6 +1022,9 @@
             try {
                 console.log('Fetching data from Airtable...');
 
+                // Fetch shared config first so settings are up to date before processing
+                await fetchConfigFromAirtable(pat);
+
                 // Fetch all tables in parallel
                 const [opportunities, requests, engagements, seals, otherActivities] = await Promise.all([
                     fetchAirtableTable('tblqtDoaoBNBvkEGC', 'Opportunities', pat),
@@ -1146,7 +1198,7 @@
         }
 
         // Save Admin Settings
-        function saveAdminSettings() {
+        async function saveAdminSettings() {
             const settings = {
                 totalPipelineTarget: parseFloat(document.getElementById('admin-pipeline-target').value),
                 monthlyPipelineTarget: parseFloat(document.getElementById('admin-monthly-target').value),
@@ -1155,7 +1207,7 @@
                 totalSpend: parseFloat(document.getElementById('admin-spend').value)
             };
 
-            // Save to localStorage
+            // Always save to localStorage
             localStorage.setItem('seal_admin_settings', JSON.stringify(settings));
 
             // Update state
@@ -1164,14 +1216,25 @@
             // Close modal
             closeModal();
 
+            // Save to Airtable if PAT is available (shared across all users)
+            const pat = localStorage.getItem('airtable_pat');
+            if (pat) {
+                const saved = await saveConfigToAirtable(pat, settings);
+                if (saved) {
+                    alert('✅ Settings saved and shared with all users via Airtable!');
+                } else {
+                    alert('✅ Settings saved locally. Could not sync to Airtable — check your token has write access.');
+                }
+            } else {
+                alert('✅ Settings saved locally (connect to Airtable to share with all users).');
+            }
+
             // Refresh dashboard with new settings
             if (state.usingLiveData) {
                 fetchFromAirtable();
             } else {
                 render();
             }
-
-            alert('✅ Admin settings saved successfully!');
         }
 
         // Toggle section
