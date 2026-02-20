@@ -1986,7 +1986,7 @@
                     <div class="bg-white rounded-xl p-8 shadow-lg mb-8">
                         <div class="flex items-center justify-between mb-6">
                             <div>
-                                <h2 class="text-2xl font-bold text-gray-900 mb-1">Quarterly ACV Breakdown</h2>
+                                <h2 class="text-2xl font-bold text-gray-900 mb-1">Historic Quarterly Pipeline Analysis</h2>
                                 <p class="text-gray-600">📸 Historical snapshots: Open vs Closed Won vs Closed Lost (% of ACV, Last 4 fiscal quarters)</p>
                             </div>
                             <button onclick="toggleSection('monthlyTrends')" class="text-gray-600 hover:text-gray-900">
@@ -2009,23 +2009,23 @@
                                         </tr>
                                     </thead>
                                     <tbody>
-                                        ${(metrics.seals && metrics.seals.length > 0) ? metrics.seals.slice(0, 10).map(seal => {
-                                            if (!seal.quarterlyTrend || seal.quarterlyTrend.length === 0) {
+                                        ${(metrics.seals && metrics.seals.length > 0) ? (() => {
+                                            const sealsWithTrend = metrics.seals.slice(0, 10).filter(s => s.quarterlyTrend && s.quarterlyTrend.length > 0);
+                                            const quarters = sealsWithTrend.length > 0 ? sealsWithTrend[0].quarterlyTrend : [];
+
+                                            const rows = metrics.seals.slice(0, 10).map(seal => {
+                                                if (!seal.quarterlyTrend || seal.quarterlyTrend.length === 0) {
+                                                    return `
+                                                        <tr class="border-b border-gray-200">
+                                                            <td class="py-3 px-4 font-semibold text-gray-900">${seal.name}</td>
+                                                            <td colspan="5" class="py-3 px-4 text-center text-gray-500">No trend data</td>
+                                                        </tr>
+                                                    `;
+                                                }
                                                 return `
-                                                    <tr class="border-b border-gray-200">
+                                                    <tr class="border-b border-gray-200 hover:bg-gray-50">
                                                         <td class="py-3 px-4 font-semibold text-gray-900">${seal.name}</td>
-                                                        <td colspan="5" class="py-3 px-4 text-center text-gray-500">No trend data</td>
-                                                    </tr>
-                                                `;
-                                            }
-                                            return `
-                                                <tr class="border-b border-gray-200 hover:bg-gray-50">
-                                                    <td class="py-3 px-4 font-semibold text-gray-900">${seal.name}</td>
-                                                    ${seal.quarterlyTrend.map(q => {
-                                                        const closedWonPct = parseFloat(q.closedWonPct);
-                                                        const openPct = parseFloat(q.openPct);
-                                                        const closedLostPct = parseFloat(q.closedLostPct);
-                                                        return `
+                                                        ${seal.quarterlyTrend.map(q => `
                                                             <td class="py-3 px-4">
                                                                 <div class="text-xs space-y-1">
                                                                     <div class="flex items-center justify-between">
@@ -2045,11 +2045,50 @@
                                                                     </div>
                                                                 </div>
                                                             </td>
+                                                        `).join('')}
+                                                    </tr>
+                                                `;
+                                            }).join('');
+
+                                            // Totals row — sum ACV per quarter across all seals
+                                            const totalsRow = quarters.length > 0 ? `
+                                                <tr class="border-t-2 border-gray-400 bg-gray-50 font-bold">
+                                                    <td class="py-3 px-4 text-gray-900">Total</td>
+                                                    ${quarters.map((q, qi) => {
+                                                        const totalACV = sealsWithTrend.reduce((sum, s) => sum + (s.quarterlyTrend[qi]?.totalACV || 0), 0);
+                                                        const totalOpen = sealsWithTrend.reduce((sum, s) => sum + (s.quarterlyTrend[qi]?.openACV || 0), 0);
+                                                        const totalWon = sealsWithTrend.reduce((sum, s) => sum + (s.quarterlyTrend[qi]?.closedWonACV || 0), 0);
+                                                        const totalLost = sealsWithTrend.reduce((sum, s) => sum + (s.quarterlyTrend[qi]?.closedLostACV || 0), 0);
+                                                        const openPct = totalACV > 0 ? ((totalOpen / totalACV) * 100).toFixed(1) : '0.0';
+                                                        const wonPct = totalACV > 0 ? ((totalWon / totalACV) * 100).toFixed(1) : '0.0';
+                                                        const lostPct = totalACV > 0 ? ((totalLost / totalACV) * 100).toFixed(1) : '0.0';
+                                                        return `
+                                                            <td class="py-3 px-4">
+                                                                <div class="text-xs space-y-1">
+                                                                    <div class="flex items-center justify-between">
+                                                                        <span class="text-gray-700 font-bold">Open:</span>
+                                                                        <span class="font-bold text-blue-700">${openPct}%</span>
+                                                                    </div>
+                                                                    <div class="flex items-center justify-between">
+                                                                        <span class="text-gray-700 font-bold">Won:</span>
+                                                                        <span class="font-bold text-green-700">${wonPct}%</span>
+                                                                    </div>
+                                                                    <div class="flex items-center justify-between">
+                                                                        <span class="text-gray-700 font-bold">Lost:</span>
+                                                                        <span class="font-bold text-red-700">${lostPct}%</span>
+                                                                    </div>
+                                                                    <div class="text-xs font-bold text-gray-700 pt-1 border-t border-gray-400">
+                                                                        ${formatCurrency(totalACV)}
+                                                                    </div>
+                                                                </div>
+                                                            </td>
                                                         `;
                                                     }).join('')}
                                                 </tr>
-                                            `;
-                                        }).join('') : `
+                                            ` : '';
+
+                                            return rows + totalsRow;
+                                        })() : `
                                             <tr>
                                                 <td colspan="6" class="py-8 text-center text-gray-500">No SEAL data available</td>
                                             </tr>
