@@ -1021,6 +1021,7 @@
             });
 
             const normalize = s => (s || '').toLowerCase().replace(/\s+/g, ' ').trim();
+            const safeNum = v => { const n = parseFloat((v || '0').toString().replace(/[$,\s]/g, '')); return isNaN(n) ? 0 : n; };
             const mktByOpp = {};
             mktFiltered.forEach(row => {
                 const key = normalize(row['Opportunity Name']);
@@ -1054,8 +1055,8 @@
                 const key = normalize(row['Opportunity Name'] || '');
                 if (!sealOppNames.has(key)) {
                     marketingOnlyCount++;
-                    marketingOnlyPipeline += parseFloat(row['Sum of Stage 1 Plus New Business and Expansion One Year Acv USD'] || 0);
-                    marketingOnlyClosedWon += parseFloat(row['Sum of Closed Won Total Op Revenue Model USD'] || 0);
+                    marketingOnlyPipeline += safeNum(row['Sum of Stage 1 Plus New Business and Expansion One Year Acv USD']);
+                    marketingOnlyClosedWon += safeNum(row['Sum of Closed Won Total Op Revenue Model USD']);
                 }
             });
 
@@ -1358,8 +1359,8 @@
                 const { metrics, loading, lastUpdated, expandedSections, usingLiveData, dateRange, startDate, endDate } = state;
             
             const mkt = metrics.marketingAttribution || { hasData: false };
-            const displayPipeline = mkt.hasData ? mkt.combinedPipeline : metrics.sealTeam.totalPipelineInfluenced;
-            const displayClosedWon = mkt.hasData ? mkt.combinedClosedWon : metrics.sealTeam.closedWonACV;
+            const displayPipeline = (mkt.hasData && !isNaN(mkt.combinedPipeline)) ? mkt.combinedPipeline : metrics.sealTeam.totalPipelineInfluenced;
+            const displayClosedWon = (mkt.hasData && !isNaN(mkt.combinedClosedWon)) ? mkt.combinedClosedWon : metrics.sealTeam.closedWonACV;
 
             const pipelineChange = calculateChange(displayPipeline, metrics.previousPeriod.totalPipelineInfluenced);
             const closedWonChange = calculateChange(displayClosedWon, metrics.previousPeriod.closedWonACV);
