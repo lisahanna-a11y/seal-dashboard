@@ -1280,10 +1280,13 @@
                             class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
                         />
                         <p class="text-xs text-gray-500 mt-2">
-                            Paste the shared read-only token provided by your team lead, or create your own at: <a href="https://airtable.com/create/tokens" target="_blank" class="text-blue-600 underline">https://airtable.com/create/tokens</a>
+                            Create or update your token at: <a href="https://airtable.com/create/tokens" target="_blank" class="text-blue-600 underline">airtable.com/create/tokens</a>
                         </p>
                         <p class="text-xs text-gray-500 mt-1">
-                            Required scopes: data.records:read, schema.bases:read
+                            Required scopes: <strong>data.records:read</strong>, <strong>data.records:write</strong>, <strong>schema.bases:read</strong>
+                        </p>
+                        <p class="text-xs text-orange-600 mt-1 font-medium">
+                            ⚠️ Without <code>data.records:write</code> scope, the Wishlist and Kanban edits won't save to Airtable.
                         </p>
                     </div>
 
@@ -2455,11 +2458,9 @@
                                 <div class="mt-2 flex items-center text-sm">
                                     <span class="status-indicator ${usingLiveData ? 'status-live' : 'status-sample'}"></span>
                                     <span class="text-slate-400">${usingLiveData ? 'Live Data from SFDC + Looker' : 'Using Sample Data'}</span>
-                                    ${!usingLiveData ? `
-                                        <button onclick="showApiKeyModal()" class="ml-4 text-blue-400 underline hover:text-blue-300">
-                                            Configure Airtable Connection
-                                        </button>
-                                    ` : ''}
+                                    <button onclick="showApiKeyModal()" class="ml-4 text-blue-400 underline hover:text-blue-300 text-xs">
+                                        ${usingLiveData ? 'Update PAT' : 'Configure Airtable Connection'}
+                                    </button>
                                 </div>
                             </div>
                             <div class="flex gap-3">
