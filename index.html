@@ -21,6 +21,8 @@
         }
         .status-live { background-color: #10b981; }
         .status-sample { background-color: #f59e0b; }
+        html { scroll-behavior: smooth; }
+        .section-nav-link { transition: color 0.15s, background-color 0.15s; }
     </style>
 </head>
 <body class="bg-gradient-to-br from-slate-900 to-slate-800 min-h-screen">
@@ -1635,8 +1637,7 @@
             return `
                 <div class="max-w-7xl mx-auto p-8">
                     <div class="mb-8">
-                        <h1 class="text-4xl font-bold text-white mb-2">FY '27 Strategy Kanban</h1>
-                        <p class="text-slate-300">PAC Team Priorities</p>
+                        <h1 class="text-4xl font-bold text-white mb-2">FY '27 PAC Team Priorities</h1>
                     </div>
 
                     <!-- Progress summary -->
@@ -1690,7 +1691,7 @@
                                     QBR Dashboard
                                 </button>
                                 <button onclick="switchView('kanban')" class="px-6 py-3 text-sm font-semibold rounded-t-lg transition-colors ${state.activeView === 'kanban' ? 'bg-white text-slate-900' : 'text-slate-400 hover:text-white hover:bg-slate-800'}">
-                                    FY'27 Strategy
+                                    FY '27 PAC Team Priorities
                                 </button>
                             </div>
                         </div>
@@ -1731,7 +1732,30 @@
             const costPerOpp = metrics.sealTeam.totalSpend / metrics.sealTeam.totalOppsInfluenced;
             const efficiency = metrics.sealTeam.closedWonACV / metrics.sealTeam.totalPipelineInfluenced;
 
-            document.getElementById('app').innerHTML = tabBar + `
+            const navBtn = (id, label) =>
+                `<button onclick="document.getElementById('${id}')?.scrollIntoView({behavior:'smooth',block:'start'})" class="section-nav-link px-3 py-1.5 text-xs font-medium text-slate-300 hover:text-white hover:bg-slate-700 rounded-full flex-shrink-0">${label}</button>`;
+
+            const sectionNav = `
+                <div class="sticky z-30 bg-slate-800 border-b border-slate-700 overflow-x-auto" style="top:53px">
+                    <div class="max-w-7xl mx-auto px-8">
+                        <div class="flex gap-1 py-2 whitespace-nowrap">
+                            ${navBtn('sec-exec', 'Executive Summary')}
+                            ${navBtn('sec-goals', 'Goal Progress')}
+                            ${navBtn('sec-monthly', 'Monthly Targets')}
+                            ${navBtn('sec-seals', 'SEAL Performance')}
+                            ${navBtn('sec-stages', 'Stage Breakdown')}
+                            ${navBtn('sec-science', 'Science Board')}
+                            ${navBtn('sec-advisors', 'Advisors')}
+                            ${navBtn('sec-chro', 'CHRO Luminaries')}
+                            ${mkt.hasData ? navBtn('sec-marketing', 'Marketing Impact') : ''}
+                            ${navBtn('sec-trends', 'Quarterly Trends')}
+                            ${navBtn('sec-pipeline', 'Pipeline Stages')}
+                            ${navBtn('sec-roi', 'ROI & Efficiency')}
+                        </div>
+                    </div>
+                </div>`;
+
+            document.getElementById('app').innerHTML = tabBar + sectionNav + `
                 <div class="max-w-7xl mx-auto p-8">
                     <!-- Header -->
                     <div class="mb-8">
@@ -1741,7 +1765,7 @@
                                 <p class="text-slate-300">Strategic Executive Advisor & Luminary Program Analytics</p>
                                 <div class="mt-2 flex items-center text-sm">
                                     <span class="status-indicator ${usingLiveData ? 'status-live' : 'status-sample'}"></span>
-                                    <span class="text-slate-400">${usingLiveData ? 'Live Data from Airtable' : 'Using Sample Data'}</span>
+                                    <span class="text-slate-400">${usingLiveData ? 'Live Data from SFDC + Looker' : 'Using Sample Data'}</span>
                                     ${!usingLiveData ? `
                                         <button onclick="showApiKeyModal()" class="ml-4 text-blue-400 underline hover:text-blue-300">
                                             Configure Airtable Connection
@@ -1851,7 +1875,7 @@
                     </div>
 
                     <!-- Executive Summary -->
-                    <div class="bg-gradient-to-br from-slate-900 to-blue-900 rounded-xl p-8 shadow-2xl mb-8">
+                    <div id="sec-exec" class="bg-gradient-to-br from-slate-900 to-blue-900 rounded-xl p-8 shadow-2xl mb-8">
                         <div class="flex items-center justify-between mb-6">
                             <div>
                                 <h2 class="text-3xl font-bold text-white mb-2">
@@ -1947,7 +1971,7 @@
                     </div>
 
                     <!-- Goal Progress -->
-                    <div class="bg-white rounded-xl p-8 shadow-lg mb-8">
+                    <div id="sec-goals" class="bg-white rounded-xl p-8 shadow-lg mb-8">
                         <div class="flex items-center justify-between mb-6">
                             <div>
                                 <h2 class="text-2xl font-bold text-gray-900 mb-1">
@@ -2030,7 +2054,7 @@
                     </div>
 
                     <!-- Monthly Goals -->
-                    <div class="bg-white rounded-xl p-8 shadow-lg mb-8">
+                    <div id="sec-monthly" class="bg-white rounded-xl p-8 shadow-lg mb-8">
                         <div class="flex items-center justify-between mb-6">
                             <div>
                                 <h2 class="text-2xl font-bold text-gray-900 mb-1">
@@ -2094,7 +2118,7 @@
                     </div>
 
                     <!-- Individual SEAL Performance -->
-                    <div class="bg-white rounded-xl p-8 shadow-lg mb-8">
+                    <div id="sec-seals" class="bg-white rounded-xl p-8 shadow-lg mb-8">
                         <div class="flex items-center justify-between mb-6">
                             <div>
                                 <h2 class="text-2xl font-bold text-gray-900 mb-1">
@@ -2168,7 +2192,7 @@
                     </div>
 
                     <!-- SEAL Performance by Stage -->
-                    <div class="bg-white rounded-xl p-8 shadow-lg mb-8">
+                    <div id="sec-stages" class="bg-white rounded-xl p-8 shadow-lg mb-8">
                         <div class="flex items-center justify-between mb-6">
                             <div>
                                 <h2 class="text-2xl font-bold text-gray-900 mb-1">SEAL Performance by Stage</h2>
@@ -2256,7 +2280,7 @@
                         const totalACV = sb.reduce((s, m) => s + m.acvInfluence, 0);
                         const totalOther = sb.reduce((s, m) => s + m.otherActivities, 0);
                         return `
-                        <div class="bg-white rounded-xl p-8 shadow-lg mb-8">
+                        <div id="sec-science" class="bg-white rounded-xl p-8 shadow-lg mb-8">
                             <div class="flex items-center justify-between mb-6">
                                 <div>
                                     <h2 class="text-2xl font-bold text-gray-900 mb-1">Science Board Impact</h2>
@@ -2323,7 +2347,7 @@
                         const totalClosed = adv.reduce((s, m) => s + m.acvClosed, 0);
                         const totalOther = adv.reduce((s, m) => s + m.otherActivities, 0);
                         return `
-                        <div class="bg-white rounded-xl p-8 shadow-lg mb-8">
+                        <div id="sec-advisors" class="bg-white rounded-xl p-8 shadow-lg mb-8">
                             <div class="flex items-center justify-between mb-6">
                                 <div>
                                     <h2 class="text-2xl font-bold text-gray-900 mb-1">Advisor Impact</h2>
@@ -2396,7 +2420,7 @@
                         const totalClosed = chro.reduce((s, m) => s + m.acvClosed, 0);
                         const totalOther = chro.reduce((s, m) => s + m.otherActivities, 0);
                         return `
-                        <div class="bg-white rounded-xl p-8 shadow-lg mb-8">
+                        <div id="sec-chro" class="bg-white rounded-xl p-8 shadow-lg mb-8">
                             <div class="flex items-center justify-between mb-6">
                                 <div>
                                     <h2 class="text-2xl font-bold text-gray-900 mb-1">CHRO Growth Luminary Impact</h2>
@@ -2465,7 +2489,7 @@
                     ${(() => {
                         if (!mkt.hasData) return '';
                         return `
-                        <div class="bg-white rounded-xl p-8 shadow-lg mb-8">
+                        <div id="sec-marketing" class="bg-white rounded-xl p-8 shadow-lg mb-8">
                             <div class="mb-6">
                                 <h2 class="text-2xl font-bold text-gray-900 mb-1">Marketing Impact</h2>
                                 <p class="text-gray-600">Marketing-influenced pipeline for the selected period, filtered by Stage 2 Date</p>
@@ -2492,7 +2516,7 @@
                     })()}
 
                     <!-- Quarterly Conversion Trends -->
-                    <div class="bg-white rounded-xl p-8 shadow-lg mb-8">
+                    <div id="sec-trends" class="bg-white rounded-xl p-8 shadow-lg mb-8">
                         <div class="flex items-center justify-between mb-6">
                             <div>
                                 <h2 class="text-2xl font-bold text-gray-900 mb-1">Historic Quarterly Pipeline Analysis</h2>
@@ -2621,7 +2645,7 @@
                     </div>
 
                     <!-- Pipeline Progression by Stage -->
-                    <div class="bg-white rounded-xl p-8 shadow-lg mb-8">
+                    <div id="sec-pipeline" class="bg-white rounded-xl p-8 shadow-lg mb-8">
                         <div class="flex items-center justify-between mb-6">
                             <div>
                                 <h2 class="text-2xl font-bold text-gray-900 mb-1">Pipeline Progression</h2>
@@ -2747,7 +2771,7 @@
                     </div>
 
                     <!-- Enhanced ROI -->
-                    <div class="bg-white rounded-xl p-8 shadow-lg mb-8">
+                    <div id="sec-roi" class="bg-white rounded-xl p-8 shadow-lg mb-8">
                         <h2 class="text-2xl font-bold text-gray-900 mb-6">Enhanced ROI & Efficiency Metrics</h2>
                         <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                             <div class="text-center p-6 bg-gradient-to-br from-green-50 to-green-100 rounded-lg border-2 border-green-200">
@@ -2773,7 +2797,7 @@
                         <p class="font-semibold mb-2">Dashboard Information:</p>
                         <p class="text-slate-400">
                             ${usingLiveData ? 
-                                `✅ Connected to Airtable base: ${AIRTABLE_BASE_ID}` :
+                                `✅ Live data from SFDC + Looker` :
                                 '⚠️ Using sample data - Only February 2026 has actuals (current month)'
                             }
                         </p>
