@@ -102,7 +102,8 @@
         const KANBAN_STATUSES = [
             { value: 'in-progress', label: 'In Progress', color: 'border-green-500 bg-green-50' },
             { value: 'not-started', label: 'Not Started', color: 'border-orange-400 bg-orange-50' },
-            { value: 'off-track', label: 'Off Track', color: 'border-red-500 bg-red-50' }
+            { value: 'off-track', label: 'Off Track', color: 'border-red-500 bg-red-50' },
+            { value: 'complete', label: 'Complete', color: 'border-blue-500 bg-blue-50' }
         ];
 
         const KANBAN_CATEGORIES = [
@@ -1584,6 +1585,7 @@
             const inProgress = cards.filter(c => c.status === 'in-progress').length;
             const notStarted = cards.filter(c => c.status === 'not-started').length;
             const offTrack = cards.filter(c => c.status === 'off-track').length;
+            const complete = cards.filter(c => c.status === 'complete').length;
 
             const quarterCols = KANBAN_QUARTERS.map(quarter => {
                 const quarterCards = cards.filter(c => c.quarter === quarter);
@@ -1647,11 +1649,13 @@
                             <span class="text-green-400">${inProgress} In Progress</span>
                             <span class="text-orange-400">${notStarted} Not Started</span>
                             <span class="text-red-400">${offTrack} Off Track</span>
+                            <span class="text-blue-400">${complete} Complete</span>
                         </div>
                         <div class="flex h-2 rounded-full overflow-hidden bg-slate-700">
                             <div class="bg-green-500 transition-all" style="width:${totalCards ? (inProgress / totalCards * 100).toFixed(1) : 0}%"></div>
                             <div class="bg-orange-400 transition-all" style="width:${totalCards ? (notStarted / totalCards * 100).toFixed(1) : 0}%"></div>
                             <div class="bg-red-500 transition-all" style="width:${totalCards ? (offTrack / totalCards * 100).toFixed(1) : 0}%"></div>
+                            <div class="bg-blue-500 transition-all" style="width:${totalCards ? (complete / totalCards * 100).toFixed(1) : 0}%"></div>
                         </div>
                     </div>
 
