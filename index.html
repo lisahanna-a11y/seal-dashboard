@@ -101,10 +101,10 @@
         const KANBAN_QUARTERS = ['Q1', 'Q2', 'Q3', 'Q4'];
 
         const KANBAN_STATUSES = [
-            { value: 'in-progress', label: 'In Progress', color: 'border-green-500 bg-green-50' },
+            { value: 'in-progress', label: 'In Progress', color: 'border-blue-500 bg-blue-50' },
             { value: 'not-started', label: 'Not Started', color: 'border-orange-400 bg-orange-50' },
             { value: 'off-track', label: 'Off Track', color: 'border-red-500 bg-red-50' },
-            { value: 'complete', label: 'Complete', color: 'border-blue-500 bg-blue-50' }
+            { value: 'complete', label: 'Complete', color: 'border-green-500 bg-green-50' }
         ];
 
         const KANBAN_CATEGORIES = [
@@ -1206,15 +1206,22 @@
                 // Fetch shared config first so settings are up to date before processing
                 await fetchConfigFromAirtable(pat);
 
-                // Fetch all tables and marketing data in parallel
-                const [opportunities, requests, engagements, seals, otherActivities, marketingData] = await Promise.all([
+                // Fetch all tables, marketing data, and kanban cards in parallel
+                const [opportunities, requests, engagements, seals, otherActivities, marketingData, kanbanRecords] = await Promise.all([
                     fetchAirtableTable('tblqtDoaoBNBvkEGC', 'Opportunities', pat),
                     fetchAirtableTable('tblgl22l1BJZEHuEG', 'Requests', pat),
                     fetchAirtableTable('tblqDX9oFP6kbkCyG', 'Engagements', pat),
                     fetchAirtableTable('tblOQ9esyE7TWdm58', 'SEALs', pat),
                     fetchAirtableTable('tblh2XURhlIZO5MnY', 'OtherActivities', pat),
-                    fetchMarketingData()
+                    fetchMarketingData(),
+                    fetchAirtableTable(KANBAN_TABLE_ID, 'PAC Kanban', pat)
                 ]);
+
+                // Update kanban cards from Airtable
+                if (kanbanRecords.length > 0) {
+                    state.kanbanCards = kanbanRecords.map(airtableRecToCard);
+                    saveKanbanCards();
+                }
 
                 // Process the data
                 const processedData = processAirtableData(opportunities, requests, engagements, seals, otherActivities, marketingData);
@@ -1853,16 +1860,16 @@
                     <div class="bg-slate-800 rounded-lg p-4 mb-6">
                         <div class="flex items-center gap-6 text-sm mb-3">
                             <span class="text-white font-semibold">${totalCards} Total Initiatives</span>
-                            <span class="text-green-400">${inProgress} In Progress</span>
+                            <span class="text-blue-400">${inProgress} In Progress</span>
                             <span class="text-orange-400">${notStarted} Not Started</span>
                             <span class="text-red-400">${offTrack} Off Track</span>
-                            <span class="text-blue-400">${complete} Complete</span>
+                            <span class="text-green-400">${complete} Complete</span>
                         </div>
                         <div class="flex h-2 rounded-full overflow-hidden bg-slate-700">
-                            <div class="bg-green-500 transition-all" style="width:${totalCards ? (inProgress / totalCards * 100).toFixed(1) : 0}%"></div>
+                            <div class="bg-blue-500 transition-all" style="width:${totalCards ? (inProgress / totalCards * 100).toFixed(1) : 0}%"></div>
                             <div class="bg-orange-400 transition-all" style="width:${totalCards ? (notStarted / totalCards * 100).toFixed(1) : 0}%"></div>
                             <div class="bg-red-500 transition-all" style="width:${totalCards ? (offTrack / totalCards * 100).toFixed(1) : 0}%"></div>
-                            <div class="bg-blue-500 transition-all" style="width:${totalCards ? (complete / totalCards * 100).toFixed(1) : 0}%"></div>
+                            <div class="bg-green-500 transition-all" style="width:${totalCards ? (complete / totalCards * 100).toFixed(1) : 0}%"></div>
                         </div>
                     </div>
 
