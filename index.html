@@ -1766,27 +1766,70 @@
             const card = state.kanbanCards.find(c => c.id === cardId);
             if (!card || !card.attachments || !card.attachments[attIdx]) return;
             const att = card.attachments[attIdx];
-            const isImage = att.type && att.type.startsWith('image/');
-            if (isImage) {
-                // Show full-size image in a simple overlay
+            const type = att.type || '';
+            const filename = att.filename || 'file';
+            const safeName = filename.replace(/</g,'&lt;');
+
+            if (type.startsWith('image/')) {
+                // Image: show inline with <img> (bypasses Content-Disposition entirely)
                 const overlay = document.createElement('div');
                 overlay.id = 'slide-viewer-overlay';
                 overlay.className = 'fixed inset-0 bg-black/90 flex items-center justify-center p-6 z-50';
                 overlay.addEventListener('click', e => { if (e.target === overlay) closeSlideViewer(); });
                 overlay.innerHTML = `
-                    <div class="relative flex flex-col items-center max-w-5xl max-h-full">
+                    <div class="flex flex-col items-center max-w-5xl w-full">
                         <div class="flex items-center justify-between w-full mb-3">
-                            <span class="text-white font-medium truncate mr-4">${att.filename.replace(/</g,'&lt;')}</span>
+                            <span class="text-white font-medium truncate mr-4">${safeName}</span>
                             <div class="flex items-center gap-4 flex-shrink-0">
                                 <a href="${att.url}" target="_blank" rel="noopener" class="text-sm text-blue-300 hover:text-blue-200 font-medium">Open in new tab ↗</a>
                                 <button onclick="closeSlideViewer()" class="w-8 h-8 flex items-center justify-center rounded-full hover:bg-white/20 text-white text-xl font-light leading-none">×</button>
                             </div>
                         </div>
-                        <img src="${att.url}" alt="${att.filename.replace(/"/g,'&quot;')}" class="max-w-full max-h-screen rounded-xl shadow-2xl object-contain" style="max-height:80vh">
+                        <img src="${att.url}" alt="${filename.replace(/"/g,'&quot;')}" class="max-w-full rounded-xl shadow-2xl object-contain" style="max-height:80vh">
                     </div>`;
                 document.body.appendChild(overlay);
+
             } else {
-                showSlideViewer(att.url, att.filename);
+                // Non-image: build modal with a loading state, then fetch as blob
+                // to bypass Content-Disposition: attachment headers from Airtable's CDN.
+                const overlay = document.createElement('div');
+                overlay.id = 'slide-viewer-overlay';
+                overlay.className = 'fixed inset-0 bg-black/80 flex items-center justify-center p-6 z-50';
+                overlay.addEventListener('click', e => { if (e.target === overlay) closeSlideViewer(); });
+                overlay.innerHTML = `
+                    <div class="bg-white rounded-2xl shadow-2xl flex flex-col w-full max-w-5xl" style="height:88vh">
+                        <div class="flex items-center justify-between px-6 py-4 border-b border-gray-200 flex-shrink-0">
+                            <h3 class="font-semibold text-gray-900 text-lg truncate mr-4">${safeName}</h3>
+                            <div class="flex items-center gap-4 flex-shrink-0">
+                                <a href="${att.url}" target="_blank" rel="noopener" class="text-sm text-blue-600 hover:text-blue-700 font-medium">Open in new tab ↗</a>
+                                <button onclick="closeSlideViewer()" class="w-8 h-8 flex items-center justify-center rounded-full hover:bg-gray-100 text-gray-500 text-xl font-light leading-none">×</button>
+                            </div>
+                        </div>
+                        <div id="att-viewer-body" class="flex-1 flex items-center justify-center">
+                            <div class="text-gray-400 animate-pulse">Loading…</div>
+                        </div>
+                    </div>`;
+                document.body.appendChild(overlay);
+
+                const isPdf = type === 'application/pdf';
+                const body = document.getElementById('att-viewer-body');
+
+                if (isPdf) {
+                    // Fetch as blob so the browser treats it as inline, not a download
+                    fetch(att.url)
+                        .then(r => { if (!r.ok) throw new Error(r.status); return r.blob(); })
+                        .then(blob => {
+                            const blobUrl = URL.createObjectURL(blob);
+                            if (body) body.innerHTML = `<embed src="${blobUrl}#toolbar=1&view=FitH" type="application/pdf" class="w-full h-full rounded-b-2xl" style="height:100%">`;
+                            setTimeout(() => URL.revokeObjectURL(blobUrl), 600000);
+                        })
+                        .catch(() => {
+                            if (body) body.innerHTML = `<div class="text-center p-8"><div class="text-5xl mb-3">📄</div><p class="text-gray-600 font-semibold mb-1">PDF preview unavailable</p><p class="text-gray-400 text-sm mb-5">Could not load inline preview</p><a href="${att.url}" target="_blank" rel="noopener" class="bg-blue-600 text-white px-5 py-2.5 rounded-xl text-sm font-semibold hover:bg-blue-700 transition-colors">Open PDF in new tab ↗</a></div>`;
+                        });
+                } else {
+                    // Other file types can't be previewed in-browser
+                    if (body) body.innerHTML = `<div class="text-center p-8"><div class="text-5xl mb-3">📎</div><p class="text-gray-600 font-semibold mb-1">${safeName}</p><p class="text-gray-400 text-sm mb-5">This file type can't be previewed inline</p><a href="${att.url}" target="_blank" rel="noopener" class="bg-blue-600 text-white px-5 py-2.5 rounded-xl text-sm font-semibold hover:bg-blue-700 transition-colors">Open in new tab ↗</a></div>`;
+                }
             }
         }
 
@@ -2083,6 +2126,8 @@
                             </button>
                         </div>
                         ${state.wishlistSyncing ? '<p class="text-center text-purple-300 text-sm mb-4 animate-pulse">Syncing…</p>' : ''}
+                        ${!localStorage.getItem('airtable_pat') ? `<div class="bg-yellow-500/20 border border-yellow-400/40 rounded-xl px-4 py-3 mb-6 text-yellow-200 text-sm flex items-start gap-2"><span class="flex-shrink-0 mt-0.5">⚠️</span><span>No Airtable PAT configured — wishes will only save locally in this browser. <a href="#" onclick="showApiKeyModal(); return false;" class="underline font-semibold">Configure PAT</a></span></div>` : ''}
+                        ${localStorage.getItem('airtable_pat') && items.some(i => i.syncPending) ? `<div class="bg-red-500/20 border border-red-400/40 rounded-xl px-4 py-3 mb-6 text-red-200 text-sm flex items-start gap-2"><span class="flex-shrink-0 mt-0.5">⚠️</span><span>Some wishes couldn't sync to Airtable. Your PAT likely needs <strong>data.records:write</strong> scope — <a href="https://airtable.com/create/tokens" target="_blank" rel="noopener" class="underline font-semibold">regenerate it here</a>, then re-enter it via Settings.</span></div>` : ''}
                         ${items.length === 0
                             ? `<div class="text-center py-24">
                                 <div class="text-6xl mb-4">🌟</div>
