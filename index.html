@@ -244,7 +244,7 @@
         // Format functions
         function formatCurrency(value) {
             if (value >= 1000000) return `$${(value / 1000000).toFixed(1)}M`;
-            if (value >= 1000) return `$${(value / 1000).toFixed(0)}K`;
+            if (value >= 1000) return `$${(value / 1000).toFixed(1)}K`;
             return `$${value}`;
         }
 
@@ -1359,8 +1359,12 @@
                 const { metrics, loading, lastUpdated, expandedSections, usingLiveData, dateRange, startDate, endDate } = state;
             
             const mkt = metrics.marketingAttribution || { hasData: false };
-            const displayPipeline = (mkt.hasData && !isNaN(mkt.combinedPipeline)) ? mkt.combinedPipeline : metrics.sealTeam.totalPipelineInfluenced;
-            const displayClosedWon = (mkt.hasData && !isNaN(mkt.combinedClosedWon)) ? mkt.combinedClosedWon : metrics.sealTeam.closedWonACV;
+            const displayPipeline = mkt.hasData
+                ? (mkt.sealOnlyPipeline || 0) + (mkt.coInfluencedPipeline || 0) + (mkt.marketingOnlyPipeline || 0)
+                : metrics.sealTeam.totalPipelineInfluenced;
+            const displayClosedWon = mkt.hasData
+                ? (mkt.sealOnlyClosedWon || 0) + (mkt.coInfluencedClosedWon || 0) + (mkt.marketingOnlyClosedWon || 0)
+                : metrics.sealTeam.closedWonACV;
 
             const pipelineChange = calculateChange(displayPipeline, metrics.previousPeriod.totalPipelineInfluenced);
             const closedWonChange = calculateChange(displayClosedWon, metrics.previousPeriod.closedWonACV);
