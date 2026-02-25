@@ -94,6 +94,41 @@
             }
         }
 
+        // Kanban constants
+        const KANBAN_QUARTERS = ['Q1', 'Q2', 'Q3', 'Q4'];
+
+        const KANBAN_STATUSES = [
+            { value: 'in-progress', label: 'In Progress', color: 'border-green-500 bg-green-50' },
+            { value: 'not-started', label: 'Not Started', color: 'border-orange-400 bg-orange-50' },
+            { value: 'off-track', label: 'Off Track', color: 'border-red-500 bg-red-50' }
+        ];
+
+        const KANBAN_CATEGORIES = [
+            { value: 'labs', label: 'Labs', color: 'bg-blue-400' },
+            { value: 'marketing', label: 'Marketing', color: 'bg-yellow-400' },
+            { value: 'field', label: 'Field', color: 'bg-pink-500' }
+        ];
+
+        const KANBAN_INITIAL_CARDS = [
+            { id: '1', title: "Davos (Q4 '26)", quarter: 'Q1', category: 'marketing', status: 'in-progress' },
+            { id: '2', title: 'FKO Texas', quarter: 'Q1', category: 'field', status: 'in-progress' },
+            { id: '3', title: 'Uplift', quarter: 'Q1', category: 'field', status: 'in-progress' },
+            { id: '4', title: 'CHRO Select Summit', quarter: 'Q1', category: 'marketing', status: 'in-progress' },
+            { id: '5', title: 'Advisor Revamp', quarter: 'Q1', category: 'field', status: 'in-progress' },
+            { id: '6', title: 'Performance Labs @ Uplift', quarter: 'Q1', category: 'marketing', status: 'in-progress' },
+            { id: '7', title: 'Smallworld rollout', quarter: 'Q1', category: 'field', status: 'in-progress' },
+            { id: '8', title: 'Labs systems integration', quarter: 'Q1', category: 'labs', status: 'in-progress' },
+            { id: '9', title: 'Science Board Connect @ Uplift', quarter: 'Q1', category: 'marketing', status: 'in-progress' },
+            { id: '10', title: 'Roster Management', quarter: 'Q1', category: 'marketing', status: 'in-progress' },
+            { id: '11', title: 'EMEA Summit + Perf Labs 2.0', quarter: 'Q2', category: 'marketing', status: 'in-progress' },
+            { id: '12', title: 'Labs + Science Board Research Initiatives', quarter: 'Q2', category: 'labs', status: 'in-progress' },
+            { id: '13', title: 'HBR Release', quarter: 'Q2', category: 'marketing', status: 'not-started' },
+            { id: '14', title: 'Offline', quarter: 'Q3', category: 'marketing', status: 'in-progress' },
+            { id: '15', title: "Davos (FY '27)", quarter: 'Q4', category: 'marketing', status: 'in-progress' },
+            { id: '16', title: 'EU Summit AG + SEAL EMEA Summit', quarter: 'Q4', category: 'marketing', status: 'in-progress' },
+            { id: '17', title: 'SEAL-Driven Regional Events', quarter: 'Q1', category: 'field', status: 'not-started' }
+        ];
+
         // State
         let state = {
             loading: false,
@@ -115,7 +150,10 @@
                 advisorImpact: true,
                 chroImpact: true
             },
-            metrics: getSampleData()
+            metrics: getSampleData(),
+            activeView: 'dashboard',
+            kanbanCards: [],
+            kanbanDraggedId: null
         };
 
         // Helper function to get date ranges
@@ -1362,10 +1400,310 @@
             render();
         }
 
+        // ── Kanban functions ──────────────────────────────────────────────────
+
+        function loadKanbanCards() {
+            const saved = localStorage.getItem('fy27_kanban_cards');
+            if (saved) {
+                state.kanbanCards = JSON.parse(saved);
+            } else {
+                const now = new Date().toISOString();
+                state.kanbanCards = KANBAN_INITIAL_CARDS.map(card => ({
+                    ...card, createdAt: now, updatedAt: now
+                }));
+                saveKanbanCards();
+            }
+        }
+
+        function saveKanbanCards() {
+            localStorage.setItem('fy27_kanban_cards', JSON.stringify(state.kanbanCards));
+        }
+
+        function switchView(view) {
+            state.activeView = view;
+            render();
+        }
+
+        function kanbanDragStart(cardId) {
+            state.kanbanDraggedId = cardId;
+        }
+
+        function kanbanDrop(quarter) {
+            if (state.kanbanDraggedId) {
+                const card = state.kanbanCards.find(c => c.id === state.kanbanDraggedId);
+                if (card && card.quarter !== quarter) {
+                    card.quarter = quarter;
+                    card.updatedAt = new Date().toISOString();
+                    saveKanbanCards();
+                    render();
+                }
+            }
+            state.kanbanDraggedId = null;
+        }
+
+        function kanbanDeleteCard(cardId) {
+            if (confirm('Delete this card?')) {
+                state.kanbanCards = state.kanbanCards.filter(c => c.id !== cardId);
+                saveKanbanCards();
+                render();
+            }
+        }
+
+        function showKanbanAddModal(quarter) {
+            const overlay = document.createElement('div');
+            overlay.id = 'kanban-modal-overlay';
+            overlay.className = 'fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50';
+            overlay.innerHTML = `
+                <div class="bg-white rounded-lg p-6 w-full max-w-md">
+                    <h3 class="text-xl font-bold mb-4">Add New Card to ${quarter}</h3>
+                    <div class="space-y-4">
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-1">Title</label>
+                            <input id="kanban-add-title" type="text" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500" placeholder="Enter initiative name" />
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-1">Category</label>
+                            <select id="kanban-add-category" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500">
+                                ${KANBAN_CATEGORIES.map(c => `<option value="${c.value}">${c.label}</option>`).join('')}
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-1">Status</label>
+                            <select id="kanban-add-status" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500">
+                                ${KANBAN_STATUSES.map(s => `<option value="${s.value}">${s.label}</option>`).join('')}
+                            </select>
+                        </div>
+                        <div class="flex gap-2 pt-4">
+                            <button onclick="submitKanbanAdd('${quarter}')" class="flex-1 bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700">Add Card</button>
+                            <button onclick="closeKanbanModal()" class="flex-1 bg-gray-200 text-gray-800 px-4 py-2 rounded-md hover:bg-gray-300">Cancel</button>
+                        </div>
+                    </div>
+                </div>`;
+            document.body.appendChild(overlay);
+        }
+
+        function submitKanbanAdd(quarter) {
+            const title = document.getElementById('kanban-add-title').value.trim();
+            if (!title) return;
+            const now = new Date().toISOString();
+            state.kanbanCards.push({
+                id: Date.now().toString(),
+                title,
+                quarter,
+                category: document.getElementById('kanban-add-category').value,
+                status: document.getElementById('kanban-add-status').value,
+                createdAt: now,
+                updatedAt: now
+            });
+            saveKanbanCards();
+            closeKanbanModal();
+            render();
+        }
+
+        function showKanbanEditModal(cardId) {
+            const card = state.kanbanCards.find(c => c.id === cardId);
+            if (!card) return;
+            const fmtDate = s => new Date(s).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+            const overlay = document.createElement('div');
+            overlay.id = 'kanban-modal-overlay';
+            overlay.className = 'fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50';
+            overlay.innerHTML = `
+                <div class="bg-white rounded-lg p-6 w-full max-w-md">
+                    <h3 class="text-xl font-bold mb-4">Edit Card</h3>
+                    <div class="space-y-4">
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-1">Title</label>
+                            <input id="kanban-edit-title" type="text" value="${card.title.replace(/"/g, '&quot;')}" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500" />
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-1">Category</label>
+                            <select id="kanban-edit-category" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500">
+                                ${KANBAN_CATEGORIES.map(c => `<option value="${c.value}" ${c.value === card.category ? 'selected' : ''}>${c.label}</option>`).join('')}
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-1">Status</label>
+                            <select id="kanban-edit-status" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500">
+                                ${KANBAN_STATUSES.map(s => `<option value="${s.value}" ${s.value === card.status ? 'selected' : ''}>${s.label}</option>`).join('')}
+                            </select>
+                        </div>
+                        <div class="bg-gray-50 p-3 rounded-md text-xs text-gray-600 space-y-1">
+                            <p>Created: ${fmtDate(card.createdAt)}</p>
+                            <p>Last Updated: ${fmtDate(card.updatedAt)}</p>
+                        </div>
+                        <div class="flex gap-2 pt-4">
+                            <button onclick="submitKanbanEdit('${cardId}')" class="flex-1 bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700">Save Changes</button>
+                            <button onclick="closeKanbanModal()" class="flex-1 bg-gray-200 text-gray-800 px-4 py-2 rounded-md hover:bg-gray-300">Cancel</button>
+                        </div>
+                    </div>
+                </div>`;
+            document.body.appendChild(overlay);
+        }
+
+        function submitKanbanEdit(cardId) {
+            const card = state.kanbanCards.find(c => c.id === cardId);
+            if (!card) return;
+            card.title = document.getElementById('kanban-edit-title').value.trim();
+            card.category = document.getElementById('kanban-edit-category').value;
+            card.status = document.getElementById('kanban-edit-status').value;
+            card.updatedAt = new Date().toISOString();
+            saveKanbanCards();
+            closeKanbanModal();
+            render();
+        }
+
+        function closeKanbanModal() {
+            const overlay = document.getElementById('kanban-modal-overlay');
+            if (overlay) overlay.remove();
+        }
+
+        function renderKanbanView() {
+            const cards = state.kanbanCards;
+
+            const getStatusStyle = status => {
+                const s = KANBAN_STATUSES.find(s => s.value === status);
+                return s ? s.color : 'border-gray-400 bg-gray-50';
+            };
+            const getCategoryColor = category => {
+                const c = KANBAN_CATEGORIES.find(c => c.value === category);
+                return c ? c.color : 'bg-gray-400';
+            };
+            const getCategoryLabel = category => {
+                const c = KANBAN_CATEGORIES.find(c => c.value === category);
+                return c ? c.label : category;
+            };
+            const getStatusLabel = status => {
+                const s = KANBAN_STATUSES.find(s => s.value === status);
+                return s ? s.label : status;
+            };
+            const fmtDate = s => new Date(s).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+
+            const totalCards = cards.length;
+            const inProgress = cards.filter(c => c.status === 'in-progress').length;
+            const notStarted = cards.filter(c => c.status === 'not-started').length;
+            const offTrack = cards.filter(c => c.status === 'off-track').length;
+
+            const quarterCols = KANBAN_QUARTERS.map(quarter => {
+                const quarterCards = cards.filter(c => c.quarter === quarter);
+                const cardItems = quarterCards.map(card => `
+                    <div
+                        draggable="true"
+                        ondragstart="kanbanDragStart('${card.id}')"
+                        class="bg-white rounded-lg p-3 cursor-move shadow-md border-2 ${getStatusStyle(card.status)} hover:shadow-lg transition-shadow"
+                    >
+                        <div class="flex items-start justify-between mb-2">
+                            <div class="flex-1 mr-2">
+                                <h3 class="font-semibold text-gray-800 text-sm">${card.title}</h3>
+                            </div>
+                            <div class="flex gap-1 flex-shrink-0">
+                                <button onclick="showKanbanEditModal('${card.id}')" class="p-1 hover:bg-gray-100 rounded" title="Edit">✏️</button>
+                                <button onclick="kanbanDeleteCard('${card.id}')" class="p-1 hover:bg-gray-100 rounded" title="Delete">🗑</button>
+                            </div>
+                        </div>
+                        <div class="flex items-center gap-2 mb-2">
+                            <span class="${getCategoryColor(card.category)} text-white text-xs px-2 py-1 rounded-full font-medium">${getCategoryLabel(card.category)}</span>
+                            <span class="text-xs text-gray-600">${getStatusLabel(card.status)}</span>
+                        </div>
+                        <div class="text-xs text-gray-500">
+                            📅 Updated: ${fmtDate(card.updatedAt)}
+                        </div>
+                    </div>
+                `).join('');
+
+                return `
+                    <div
+                        class="bg-slate-800 rounded-lg p-4 min-h-96"
+                        ondragover="event.preventDefault()"
+                        ondrop="kanbanDrop('${quarter}')"
+                    >
+                        <div class="flex items-center justify-between mb-4">
+                            <h2 class="text-xl font-bold text-white">${quarter}</h2>
+                            <button onclick="showKanbanAddModal('${quarter}')" class="w-7 h-7 flex items-center justify-center hover:bg-slate-700 rounded text-slate-400 hover:text-white text-xl leading-none">+</button>
+                        </div>
+                        <div class="space-y-3">${cardItems}</div>
+                    </div>`;
+            }).join('');
+
+            const categoryLegend = KANBAN_CATEGORIES.map(cat =>
+                `<span class="${cat.color} text-white text-xs px-3 py-1 rounded-full font-medium">${cat.label}</span>`
+            ).join('');
+
+            const statusLegend = KANBAN_STATUSES.map(status =>
+                `<div class="border-2 ${status.color} rounded px-3 py-1 text-xs">${status.label}</div>`
+            ).join('');
+
+            return `
+                <div class="max-w-7xl mx-auto p-8">
+                    <div class="mb-8">
+                        <h1 class="text-4xl font-bold text-white mb-2">FY '27 Strategy Kanban</h1>
+                        <p class="text-slate-300">PAC Team Priorities</p>
+                    </div>
+
+                    <!-- Progress summary -->
+                    <div class="bg-slate-800 rounded-lg p-4 mb-6">
+                        <div class="flex items-center gap-6 text-sm mb-3">
+                            <span class="text-white font-semibold">${totalCards} Total Initiatives</span>
+                            <span class="text-green-400">${inProgress} In Progress</span>
+                            <span class="text-orange-400">${notStarted} Not Started</span>
+                            <span class="text-red-400">${offTrack} Off Track</span>
+                        </div>
+                        <div class="flex h-2 rounded-full overflow-hidden bg-slate-700">
+                            <div class="bg-green-500 transition-all" style="width:${totalCards ? (inProgress / totalCards * 100).toFixed(1) : 0}%"></div>
+                            <div class="bg-orange-400 transition-all" style="width:${totalCards ? (notStarted / totalCards * 100).toFixed(1) : 0}%"></div>
+                            <div class="bg-red-500 transition-all" style="width:${totalCards ? (offTrack / totalCards * 100).toFixed(1) : 0}%"></div>
+                        </div>
+                    </div>
+
+                    <!-- Kanban columns -->
+                    <div class="grid grid-cols-4 gap-6">${quarterCols}</div>
+
+                    <!-- Legend -->
+                    <div class="mt-8 bg-slate-800 rounded-lg p-6">
+                        <h3 class="text-white font-semibold mb-3">Legend</h3>
+                        <div class="grid grid-cols-2 gap-6">
+                            <div>
+                                <p class="text-slate-400 text-sm mb-2">Categories:</p>
+                                <div class="flex flex-wrap gap-2">${categoryLegend}</div>
+                            </div>
+                            <div>
+                                <p class="text-slate-400 text-sm mb-2">Status (Border Color):</p>
+                                <div class="space-y-2">${statusLegend}</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>`;
+        }
+
+        // ── End Kanban functions ──────────────────────────────────────────────
+
         // Main render function
         function render() {
             try {
                 console.log('=== RENDER START ===');
+
+                // Shared tab bar
+                const tabBar = `
+                    <div class="sticky top-0 z-40 bg-slate-900 border-b border-slate-700">
+                        <div class="max-w-7xl mx-auto px-8">
+                            <div class="flex gap-1 pt-2">
+                                <button onclick="switchView('dashboard')" class="px-6 py-3 text-sm font-semibold rounded-t-lg transition-colors ${state.activeView === 'dashboard' ? 'bg-white text-slate-900' : 'text-slate-400 hover:text-white hover:bg-slate-800'}">
+                                    QBR Dashboard
+                                </button>
+                                <button onclick="switchView('kanban')" class="px-6 py-3 text-sm font-semibold rounded-t-lg transition-colors ${state.activeView === 'kanban' ? 'bg-white text-slate-900' : 'text-slate-400 hover:text-white hover:bg-slate-800'}">
+                                    FY'27 Strategy
+                                </button>
+                            </div>
+                        </div>
+                    </div>`;
+
+                // Kanban view early return
+                if (state.activeView === 'kanban') {
+                    document.getElementById('app').innerHTML = tabBar +
+                        '<div class="bg-gradient-to-br from-slate-900 to-slate-800 min-h-screen">' +
+                        renderKanbanView() + '</div>';
+                    return;
+                }
+
                 console.log('State:', state);
                 console.log('Metrics:', state.metrics);
                 console.log('SEALs count:', state.metrics?.seals?.length);
@@ -1393,7 +1731,7 @@
             const costPerOpp = metrics.sealTeam.totalSpend / metrics.sealTeam.totalOppsInfluenced;
             const efficiency = metrics.sealTeam.closedWonACV / metrics.sealTeam.totalPipelineInfluenced;
 
-            document.getElementById('app').innerHTML = `
+            document.getElementById('app').innerHTML = tabBar + `
                 <div class="max-w-7xl mx-auto p-8">
                     <!-- Header -->
                     <div class="mb-8">
@@ -2459,6 +2797,9 @@
                 `;
             }
         }
+
+        // Load kanban cards from localStorage (or initialize with defaults)
+        loadKanbanCards();
 
         // Initial render
         render();
