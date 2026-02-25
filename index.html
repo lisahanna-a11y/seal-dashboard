@@ -1021,7 +1021,15 @@
             });
 
             const normalize = s => (s || '').toLowerCase().replace(/\s+/g, ' ').trim();
-            const safeNum = v => { const n = parseFloat((v || '0').toString().replace(/[$,\s]/g, '')); return isNaN(n) ? 0 : n; };
+            const safeNum = v => {
+                const s = (v || '0').toString().trim();
+                const mM = s.match(/^\$?([\d,.]+)M$/i);
+                if (mM) return parseFloat(mM[1].replace(/,/g, '')) * 1000000;
+                const mK = s.match(/^\$?([\d,.]+)K$/i);
+                if (mK) return parseFloat(mK[1].replace(/,/g, '')) * 1000;
+                const n = parseFloat(s.replace(/[$,\s]/g, ''));
+                return isNaN(n) ? 0 : n;
+            };
             const mktByOpp = {};
             mktFiltered.forEach(row => {
                 const key = normalize(row['Opportunity Name']);
