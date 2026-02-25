@@ -33,6 +33,7 @@
         const AIRTABLE_BASE_ID = 'app55vpOMLhznWdHC';
         const DASHBOARD_CONFIG_TABLE = 'tblMb7Kiv7zxChLNQ';
         const DASHBOARD_CONFIG_RECORD = 'recSevENlqtzyUG00';
+        const KANBAN_TABLE_ID = 'tbl6nXjgtxK9VdKjE';
 
         const DEFAULT_SETTINGS = {
             totalPipelineTarget: 75000000,
@@ -176,7 +177,8 @@
             metrics: getSampleData(),
             activeView: 'dashboard',
             kanbanCards: [],
-            kanbanDraggedId: null
+            kanbanDraggedId: null,
+            kanbanSyncing: false
         };
 
         // Helper function to get date ranges
@@ -1425,7 +1427,73 @@
 
         // ── Kanban functions ──────────────────────────────────────────────────
 
+        // Map an Airtable PAC Kanban record → local card object
+        function airtableRecToCard(rec) {
+            const f = rec.fields;
+            return {
+                id: f['Card ID'] || rec.id,
+                airtableId: rec.id,
+                title: f['Title'] || '',
+                quarter: f['Quarter'] || 'Q1',
+                category: f['Category'] || 'marketing',
+                status: f['Status'] || 'in-progress',
+                projectedEndDate: f['Projected End Date'] || null,
+                slideUrl: f['Slide URL'] || null,
+                createdAt: f['Created At'] || new Date().toISOString(),
+                updatedAt: f['Updated At'] || new Date().toISOString()
+            };
+        }
+
+        // Map a local card → Airtable fields object
+        function cardToAirtableFields(card) {
+            const fields = {
+                'Title': card.title,
+                'Quarter': card.quarter,
+                'Category': card.category,
+                'Status': card.status,
+                'Card ID': card.id,
+                'Updated At': card.updatedAt
+            };
+            if (card.projectedEndDate) fields['Projected End Date'] = card.projectedEndDate;
+            if (card.slideUrl) fields['Slide URL'] = card.slideUrl;
+            return fields;
+        }
+
+        async function airtableKanbanCreate(pat, card) {
+            try {
+                const url = `https://api.airtable.com/v0/${AIRTABLE_BASE_ID}/${KANBAN_TABLE_ID}`;
+                const res = await fetch(url, {
+                    method: 'POST',
+                    headers: { 'Authorization': `Bearer ${pat}`, 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ fields: { ...cardToAirtableFields(card), 'Created At': card.createdAt } })
+                });
+                if (res.ok) { const d = await res.json(); return d.id; }
+            } catch (e) { console.warn('Kanban create failed:', e); }
+            return null;
+        }
+
+        async function airtableKanbanUpdate(pat, card) {
+            if (!card.airtableId) return;
+            try {
+                const url = `https://api.airtable.com/v0/${AIRTABLE_BASE_ID}/${KANBAN_TABLE_ID}/${card.airtableId}`;
+                await fetch(url, {
+                    method: 'PATCH',
+                    headers: { 'Authorization': `Bearer ${pat}`, 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ fields: cardToAirtableFields(card) })
+                });
+            } catch (e) { console.warn('Kanban update failed:', e); }
+        }
+
+        async function airtableKanbanDelete(pat, airtableId) {
+            if (!airtableId) return;
+            try {
+                const url = `https://api.airtable.com/v0/${AIRTABLE_BASE_ID}/${KANBAN_TABLE_ID}/${airtableId}`;
+                await fetch(url, { method: 'DELETE', headers: { 'Authorization': `Bearer ${pat}` } });
+            } catch (e) { console.warn('Kanban delete failed:', e); }
+        }
+
         function loadKanbanCards() {
+            // Seed from localStorage immediately for instant render
             const saved = localStorage.getItem('fy27_kanban_cards');
             if (saved) {
                 state.kanbanCards = JSON.parse(saved);
@@ -1435,6 +1503,25 @@
                     ...card, createdAt: now, updatedAt: now
                 }));
                 saveKanbanCards();
+            }
+            // Async sync from Airtable if PAT is configured
+            const pat = localStorage.getItem('airtable_pat');
+            if (pat) syncKanbanFromAirtable(pat);
+        }
+
+        async function syncKanbanFromAirtable(pat) {
+            try {
+                state.kanbanSyncing = true;
+                const records = await fetchAirtableTable(KANBAN_TABLE_ID, 'PAC Kanban', pat);
+                if (records.length > 0) {
+                    state.kanbanCards = records.map(airtableRecToCard);
+                    saveKanbanCards();
+                }
+                state.kanbanSyncing = false;
+                if (state.activeView === 'kanban') render();
+            } catch (e) {
+                console.warn('Kanban Airtable sync failed:', e);
+                state.kanbanSyncing = false;
             }
         }
 
@@ -1459,6 +1546,8 @@
                     card.updatedAt = new Date().toISOString();
                     saveKanbanCards();
                     render();
+                    const pat = localStorage.getItem('airtable_pat');
+                    if (pat) airtableKanbanUpdate(pat, card);
                 }
             }
             state.kanbanDraggedId = null;
@@ -1466,9 +1555,12 @@
 
         function kanbanDeleteCard(cardId) {
             if (confirm('Delete this card?')) {
+                const card = state.kanbanCards.find(c => c.id === cardId);
                 state.kanbanCards = state.kanbanCards.filter(c => c.id !== cardId);
                 saveKanbanCards();
                 render();
+                const pat = localStorage.getItem('airtable_pat');
+                if (pat && card && card.airtableId) airtableKanbanDelete(pat, card.airtableId);
             }
         }
 
@@ -1521,7 +1613,7 @@
             const title = document.getElementById('kanban-add-title').value.trim();
             if (!title) return;
             const now = new Date().toISOString();
-            state.kanbanCards.push({
+            const newCard = {
                 id: Date.now().toString(),
                 title,
                 quarter,
@@ -1531,10 +1623,17 @@
                 slideUrl: document.getElementById('kanban-add-slideurl').value.trim() || null,
                 createdAt: now,
                 updatedAt: now
-            });
+            };
+            state.kanbanCards.push(newCard);
             saveKanbanCards();
             closeKanbanModal();
             render();
+            const pat = localStorage.getItem('airtable_pat');
+            if (pat) {
+                airtableKanbanCreate(pat, newCard).then(airtableId => {
+                    if (airtableId) { newCard.airtableId = airtableId; saveKanbanCards(); }
+                });
+            }
         }
 
         function showKanbanEditModal(cardId) {
@@ -1602,6 +1701,8 @@
             saveKanbanCards();
             closeKanbanModal();
             render();
+            const pat = localStorage.getItem('airtable_pat');
+            if (pat) airtableKanbanUpdate(pat, card);
         }
 
         function closeKanbanModal() {
@@ -1730,8 +1831,22 @@
 
             return `
                 <div class="max-w-7xl mx-auto p-8">
-                    <div class="mb-8">
-                        <h1 class="text-4xl font-bold text-white mb-2">FY '27 PAC Team Priorities</h1>
+                    <div class="mb-8 flex items-start justify-between">
+                        <div>
+                            <h1 class="text-4xl font-bold text-white mb-2">FY '27 PAC Team Priorities</h1>
+                            <p class="text-slate-400 text-sm">
+                                ${state.kanbanSyncing
+                                    ? '⟳ Syncing with Airtable…'
+                                    : localStorage.getItem('airtable_pat')
+                                        ? '✅ Synced with Airtable — changes save for everyone'
+                                        : '⚠️ No Airtable connection — changes are local only'}
+                            </p>
+                        </div>
+                        ${localStorage.getItem('airtable_pat') ? `
+                        <button onclick="syncKanbanFromAirtable(localStorage.getItem('airtable_pat'))"
+                            class="flex items-center gap-2 px-4 py-2 bg-slate-700 hover:bg-slate-600 text-white rounded-lg text-sm transition-colors">
+                            ⟳ Refresh
+                        </button>` : ''}
                     </div>
 
                     <!-- Progress summary -->
