@@ -1013,11 +1013,11 @@
             });
 
             // === MARKETING ATTRIBUTION ===
-            // Filter marketing data to the selected date range using Stage 1 Date
-            // Note: SEAL data uses Engagement Date; marketing uses Stage 1 Date — closest alignment available.
+            // Filter marketing data to the selected date range using Stage 2 Date
+            // Note: SEAL data uses Engagement Date; marketing uses Stage 2 Date — closer to qualified pipeline.
             const mktFiltered = marketingData.filter(row => {
-                const stg1 = row['Stage 1 Date'];
-                return stg1 && stg1 >= state.startDate && stg1 <= state.endDate;
+                const stg2 = row['Stage 2 Date'];
+                return stg2 && stg2 >= state.startDate && stg2 <= state.endDate;
             });
 
             const normalize = s => (s || '').toLowerCase().replace(/\s+/g, ' ').trim();
@@ -2129,7 +2129,7 @@
                                 <div>
                                     <h2 class="text-2xl font-bold text-gray-900 mb-1">Marketing Impact</h2>
                                     <p class="text-gray-600">Attribution breakdown across SEAL-influenced, co-influenced, and marketing-only opportunities</p>
-                                    <p class="text-xs text-amber-600 mt-1">Note: Marketing data filtered by Stage 1 Date; SEAL data filtered by Engagement Date. ${mkt.mktFilteredCount} marketing opps matched to date range.</p>
+                                    <p class="text-xs text-amber-600 mt-1">Note: Marketing data filtered by Stage 2 Date; SEAL data filtered by Engagement Date. ${mkt.mktFilteredCount} marketing opps matched to date range.</p>
                                 </div>
                             </div>
 
