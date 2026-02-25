@@ -1446,6 +1446,7 @@
                 status: f['Status'] || 'in-progress',
                 projectedEndDate: f['Projected End Date'] || null,
                 slideUrl: f['Slide URL'] || null,
+                attachments: f['Attachments'] || [],
                 createdAt: f['Created At'] || new Date().toISOString(),
                 updatedAt: f['Updated At'] || new Date().toISOString()
             };
@@ -1733,6 +1734,34 @@
             if (card && card.slideUrl) showSlideViewer(card.slideUrl, card.title);
         }
 
+        function openKanbanAttachment(cardId, attIdx) {
+            const card = state.kanbanCards.find(c => c.id === cardId);
+            if (!card || !card.attachments || !card.attachments[attIdx]) return;
+            const att = card.attachments[attIdx];
+            const isImage = att.type && att.type.startsWith('image/');
+            if (isImage) {
+                // Show full-size image in a simple overlay
+                const overlay = document.createElement('div');
+                overlay.id = 'slide-viewer-overlay';
+                overlay.className = 'fixed inset-0 bg-black/90 flex items-center justify-center p-6 z-50';
+                overlay.addEventListener('click', e => { if (e.target === overlay) closeSlideViewer(); });
+                overlay.innerHTML = `
+                    <div class="relative flex flex-col items-center max-w-5xl max-h-full">
+                        <div class="flex items-center justify-between w-full mb-3">
+                            <span class="text-white font-medium truncate mr-4">${att.filename.replace(/</g,'&lt;')}</span>
+                            <div class="flex items-center gap-4 flex-shrink-0">
+                                <a href="${att.url}" target="_blank" rel="noopener" class="text-sm text-blue-300 hover:text-blue-200 font-medium">Open in new tab ↗</a>
+                                <button onclick="closeSlideViewer()" class="w-8 h-8 flex items-center justify-center rounded-full hover:bg-white/20 text-white text-xl font-light leading-none">×</button>
+                            </div>
+                        </div>
+                        <img src="${att.url}" alt="${att.filename.replace(/"/g,'&quot;')}" class="max-w-full max-h-screen rounded-xl shadow-2xl object-contain" style="max-height:80vh">
+                    </div>`;
+                document.body.appendChild(overlay);
+            } else {
+                showSlideViewer(att.url, att.filename);
+            }
+        }
+
         function showSlideViewer(url, title) {
             const embedUrl = getEmbedUrl(url);
             const overlay = document.createElement('div');
@@ -1820,6 +1849,18 @@
                         ? `<button onclick="event.stopPropagation(); openKanbanSlide('${card.id}')" class="p-1 hover:bg-gray-100 rounded text-blue-500 text-xs" title="View attachment">🔗</button>`
                         : '';
                     const openSlide = card.slideUrl ? `onclick="openKanbanSlide('${card.id}')"` : '';
+                    const attachmentStrip = (card.attachments && card.attachments.length > 0)
+                        ? `<div class="flex flex-wrap gap-1.5 mt-2 pt-2 border-t border-gray-100">
+                            ${card.attachments.map((att, i) => {
+                                const isImg = att.type && att.type.startsWith('image/');
+                                const safeName = (att.filename || 'file').replace(/</g, '&lt;').replace(/"/g, '&quot;');
+                                const thumb = isImg ? (att.thumbnails && att.thumbnails.large ? att.thumbnails.large.url : att.url) : null;
+                                return isImg
+                                    ? `<button onclick="event.stopPropagation(); openKanbanAttachment('${card.id}', ${i})" class="rounded overflow-hidden border border-gray-200 hover:border-blue-400 transition-colors flex-shrink-0" title="${safeName}"><img src="${thumb}" class="w-16 h-11 object-cover block" alt="${safeName}"></button>`
+                                    : `<button onclick="event.stopPropagation(); openKanbanAttachment('${card.id}', ${i})" class="flex items-center gap-1 bg-gray-50 hover:bg-blue-50 border border-gray-200 hover:border-blue-400 rounded px-2 py-1 text-xs text-gray-700 transition-colors flex-shrink-0 max-w-full" style="max-width:9rem" title="${safeName}">📎 <span class="truncate">${safeName}</span></button>`;
+                            }).join('')}
+                           </div>`
+                        : '';
                     return `
                         <div
                             draggable="true"
@@ -1843,6 +1884,7 @@
                                 <span class="text-xs text-gray-600">${getStatusLabel(card.status)}</span>
                             </div>
                             <div class="text-xs text-gray-400">📅 Updated: ${fmtDate(card.updatedAt)}</div>
+                            ${attachmentStrip}
                         </div>`;
                 }).join('');
 
