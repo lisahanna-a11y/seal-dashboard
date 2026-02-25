@@ -1717,6 +1717,54 @@
             if (overlay) overlay.remove();
         }
 
+        function getEmbedUrl(url) {
+            if (!url) return url;
+            const slidesMatch = url.match(/docs\.google\.com\/presentation\/d\/([^/?]+)/);
+            if (slidesMatch) return `https://docs.google.com/presentation/d/${slidesMatch[1]}/embed?start=false&loop=false&rm=minimal`;
+            const docsMatch = url.match(/docs\.google\.com\/document\/d\/([^/?]+)/);
+            if (docsMatch) return `https://docs.google.com/document/d/${docsMatch[1]}/preview`;
+            const sheetsMatch = url.match(/docs\.google\.com\/spreadsheets\/d\/([^/?]+)/);
+            if (sheetsMatch) return `https://docs.google.com/spreadsheets/d/${sheetsMatch[1]}/preview`;
+            return url;
+        }
+
+        function openKanbanSlide(cardId) {
+            const card = state.kanbanCards.find(c => c.id === cardId);
+            if (card && card.slideUrl) showSlideViewer(card.slideUrl, card.title);
+        }
+
+        function showSlideViewer(url, title) {
+            const embedUrl = getEmbedUrl(url);
+            const overlay = document.createElement('div');
+            overlay.id = 'slide-viewer-overlay';
+            overlay.className = 'fixed inset-0 bg-black/80 flex items-center justify-center p-6 z-50';
+            overlay.addEventListener('click', e => { if (e.target === overlay) closeSlideViewer(); });
+            overlay.innerHTML = `
+                <div class="bg-white rounded-2xl shadow-2xl flex flex-col w-full max-w-6xl" style="height:88vh">
+                    <div class="flex items-center justify-between px-6 py-4 border-b border-gray-200 flex-shrink-0">
+                        <h3 class="font-semibold text-gray-900 text-lg truncate mr-4">${title.replace(/</g,'&lt;')}</h3>
+                        <div class="flex items-center gap-4 flex-shrink-0">
+                            <a href="${url}" target="_blank" rel="noopener"
+                               class="text-sm text-blue-600 hover:text-blue-700 font-medium">
+                                Open in new tab ↗
+                            </a>
+                            <button onclick="closeSlideViewer()"
+                                class="w-8 h-8 flex items-center justify-center rounded-full hover:bg-gray-100 text-gray-500 hover:text-gray-700 text-xl font-light leading-none">
+                                ×
+                            </button>
+                        </div>
+                    </div>
+                    <iframe src="${embedUrl}" class="flex-1 w-full rounded-b-2xl" frameborder="0"
+                        allowfullscreen allow="autoplay; encrypted-media"></iframe>
+                </div>`;
+            document.body.appendChild(overlay);
+        }
+
+        function closeSlideViewer() {
+            const el = document.getElementById('slide-viewer-overlay');
+            if (el) el.remove();
+        }
+
         function renderKanbanView() {
             const cards = state.kanbanCards;
 
@@ -1762,9 +1810,9 @@
                         ? `<span class="text-xs font-semibold text-indigo-600 bg-indigo-50 border border-indigo-200 px-1.5 py-0.5 rounded ml-1 flex-shrink-0">→ ${endQ}</span>`
                         : '';
                     const slideBtn = card.slideUrl
-                        ? `<a href="${card.slideUrl}" target="_blank" rel="noopener" onclick="event.stopPropagation()" class="p-1 hover:bg-gray-100 rounded text-blue-500 text-xs" title="Open attachment">🔗</a>`
+                        ? `<button onclick="event.stopPropagation(); openKanbanSlide('${card.id}')" class="p-1 hover:bg-gray-100 rounded text-blue-500 text-xs" title="View attachment">🔗</button>`
                         : '';
-                    const openSlide = card.slideUrl ? `onclick="window.open('${card.slideUrl}','_blank')"` : '';
+                    const openSlide = card.slideUrl ? `onclick="openKanbanSlide('${card.id}')"` : '';
                     return `
                         <div
                             draggable="true"
@@ -1795,7 +1843,7 @@
                     const endDate = card.projectedEndDate
                         ? new Date(card.projectedEndDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
                         : '';
-                    const openSlide = card.slideUrl ? `onclick="window.open('${card.slideUrl}','_blank')"` : `onclick="showKanbanEditModal('${card.id}')"`;
+                    const openSlide = card.slideUrl ? `onclick="openKanbanSlide('${card.id}')"` : `onclick="showKanbanEditModal('${card.id}')"`;
                     return `
                         <div
                             class="rounded-lg p-3 border-2 border-dashed bg-white/60 ${statusBorder(card.status)} hover:bg-white/90 transition-all cursor-pointer"
@@ -1803,13 +1851,15 @@
                         >
                             <div class="flex items-center justify-between mb-1.5">
                                 <span class="text-xs text-gray-400 font-medium">↩ from ${card.quarter}</span>
-                                <button onclick="event.stopPropagation(); showKanbanEditModal('${card.id}')" class="p-0.5 hover:bg-gray-100 rounded text-gray-400 text-xs" title="Edit">✏️</button>
+                                <div class="flex gap-1">
+                                    ${card.slideUrl ? `<button onclick="event.stopPropagation(); openKanbanSlide('${card.id}')" class="p-0.5 hover:bg-gray-100 rounded text-blue-500 text-xs" title="View attachment">🔗</button>` : ''}
+                                    <button onclick="event.stopPropagation(); showKanbanEditModal('${card.id}')" class="p-0.5 hover:bg-gray-100 rounded text-gray-400 text-xs" title="Edit">✏️</button>
+                                </div>
                             </div>
                             <p class="font-medium text-gray-700 text-sm leading-snug mb-1.5">${card.title}</p>
                             <div class="flex items-center gap-1.5 flex-wrap">
                                 <span class="${getCategoryColor(card.category)} text-white text-xs px-2 py-0.5 rounded-full font-medium">${getCategoryLabel(card.category)}</span>
                                 ${endDate ? `<span class="text-xs text-gray-500">until ${endDate}</span>` : ''}
-                                ${card.slideUrl ? `<span class="text-xs text-blue-500">🔗 slide</span>` : ''}
                             </div>
                         </div>`;
                 }).join('');
