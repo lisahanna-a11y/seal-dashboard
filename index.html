@@ -1920,14 +1920,18 @@
             try {
                 state.wishlistSyncing = true;
                 const records = await fetchAirtableTable(WISHLIST_TABLE_ID, 'Alexi Wishlist', pat);
-                state.wishlistItems = records.map(r => ({
-                    id: r.id,
-                    item: r.fields['Item'] || '',
-                    notes: r.fields['Notes'] || '',
-                    addedBy: r.fields['Added By'] || '',
-                    createdAt: r.fields['Created At'] || ''
-                }));
-                saveWishlistItems();
+                // Only overwrite local state if Airtable actually has data, so a failed
+                // write followed by a refresh doesn't silently wipe everything.
+                if (records.length > 0) {
+                    state.wishlistItems = records.map(r => ({
+                        id: r.id,
+                        item: r.fields['Item'] || '',
+                        notes: r.fields['Notes'] || '',
+                        addedBy: r.fields['Added By'] || '',
+                        createdAt: r.fields['Created At'] || ''
+                    }));
+                    saveWishlistItems();
+                }
                 state.wishlistSyncing = false;
                 if (state.activeView === 'wishlist') render();
             } catch (e) {
@@ -1947,7 +1951,9 @@
                     }})
                 });
                 if (res.ok) { const d = await res.json(); return d.id; }
-            } catch (e) { console.warn('Wishlist create failed:', e); }
+                const errText = await res.text();
+                console.error('Wishlist create failed:', res.status, errText);
+            } catch (e) { console.error('Wishlist create error:', e); }
             return null;
         }
 
@@ -1997,7 +2003,7 @@
             const notes = document.getElementById('wishlist-notes-input')?.value.trim() || '';
             const addedBy = document.getElementById('wishlist-name-input')?.value.trim() || '';
             const now = new Date().toISOString();
-            const newItem = { id: 'wl_' + Date.now(), item: itemText, notes, addedBy, createdAt: now };
+            const newItem = { id: 'wl_' + Date.now(), item: itemText, notes, addedBy, createdAt: now, syncPending: true };
             closeWishlistModal();
             state.wishlistItems.unshift(newItem);
             saveWishlistItems();
@@ -2006,11 +2012,25 @@
             const pat = localStorage.getItem('airtable_pat');
             if (pat) {
                 const airtableId = await airtableWishlistCreate(pat, newItem);
+                const idx = state.wishlistItems.findIndex(i => i.id === newItem.id);
                 if (airtableId) {
-                    const idx = state.wishlistItems.findIndex(i => i.id === newItem.id);
-                    if (idx !== -1) state.wishlistItems[idx].id = airtableId;
+                    if (idx !== -1) { state.wishlistItems[idx].id = airtableId; state.wishlistItems[idx].syncPending = false; }
                     saveWishlistItems();
+                } else {
+                    // Write failed — show a toast so user knows
+                    const toast = document.createElement('div');
+                    toast.style.cssText = 'position:fixed;bottom:1.5rem;left:50%;transform:translateX(-50%);background:#ef4444;color:white;padding:0.75rem 1.5rem;border-radius:0.75rem;font-size:0.875rem;font-weight:600;z-index:9999;box-shadow:0 4px 20px rgba(0,0,0,0.3);';
+                    toast.textContent = '⚠️ Saved locally but Airtable write failed — check PAT permissions in console';
+                    document.body.appendChild(toast);
+                    setTimeout(() => toast.remove(), 5000);
                 }
+            } else {
+                // No PAT — item is local-only
+                const toast = document.createElement('div');
+                toast.style.cssText = 'position:fixed;bottom:1.5rem;left:50%;transform:translateX(-50%);background:#f59e0b;color:white;padding:0.75rem 1.5rem;border-radius:0.75rem;font-size:0.875rem;font-weight:600;z-index:9999;box-shadow:0 4px 20px rgba(0,0,0,0.3);';
+                toast.textContent = '⚠️ No Airtable PAT configured — wish saved locally only';
+                document.body.appendChild(toast);
+                setTimeout(() => toast.remove(), 4000);
             }
         }
 
