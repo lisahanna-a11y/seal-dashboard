@@ -327,8 +327,44 @@
             }
         }
 
+        // Marketing data from Looker via Google Sheets
+        const MARKETING_SHEET_CSV_URL = 'https://docs.google.com/spreadsheets/d/1W7JAKTgQ4X0VAYpFS09cz5OzZzrFldFGL8u9vL5AkBo/export?format=csv&gid=273244654';
+
+        function parseCSV(text) {
+            const lines = text.trim().split('\n');
+            if (lines.length < 2) return [];
+            const headers = lines[0].split(',').map(h => h.replace(/^"|"$/g, '').trim());
+            return lines.slice(1).map(line => {
+                const values = [];
+                let cur = '', inQuotes = false;
+                for (let i = 0; i < line.length; i++) {
+                    if (line[i] === '"') { inQuotes = !inQuotes; }
+                    else if (line[i] === ',' && !inQuotes) { values.push(cur.trim()); cur = ''; }
+                    else { cur += line[i]; }
+                }
+                values.push(cur.trim());
+                const obj = {};
+                headers.forEach((h, i) => { obj[h] = (values[i] || '').replace(/^"|"$/g, ''); });
+                return obj;
+            });
+        }
+
+        async function fetchMarketingData() {
+            try {
+                const response = await fetch(MARKETING_SHEET_CSV_URL);
+                if (!response.ok) { console.warn('Marketing data fetch failed:', response.status); return []; }
+                const text = await response.text();
+                const records = parseCSV(text);
+                console.log(`Fetched ${records.length} marketing records from Google Sheets`);
+                return records;
+            } catch (e) {
+                console.warn('Marketing data unavailable:', e);
+                return [];
+            }
+        }
+
         // Process Airtable data into dashboard metrics
-        function processAirtableData(opportunities, requests, engagements, seals, otherActivities = []) {
+        function processAirtableData(opportunities, requests, engagements, seals, otherActivities = [], marketingData = []) {
             const startDate = new Date(state.startDate);
             const endDate = new Date(state.endDate);
 
@@ -976,6 +1012,72 @@
                 };
             });
 
+            // === MARKETING ATTRIBUTION ===
+            // Filter marketing data to the selected date range using Stage 1 Date
+            // Note: SEAL data uses Engagement Date; marketing uses Stage 1 Date — closest alignment available.
+            const mktFiltered = marketingData.filter(row => {
+                const stg1 = row['Stage 1 Date'];
+                return stg1 && stg1 >= state.startDate && stg1 <= state.endDate;
+            });
+
+            const normalize = s => (s || '').toLowerCase().replace(/\s+/g, ' ').trim();
+            const mktByOpp = {};
+            mktFiltered.forEach(row => {
+                const key = normalize(row['Opportunity Name']);
+                if (key) mktByOpp[key] = row;
+            });
+
+            // Tag each SEAL opp as co-influenced or SEAL-only
+            const sealOppNames = new Set(filteredOpps.map(o => normalize(o.fields['Opportunity Name'] || '')));
+
+            let coInfluencedCount = 0, coInfluencedPipeline = 0, coInfluencedClosedWon = 0;
+            let sealOnlyCount = 0, sealOnlyPipeline = 0, sealOnlyClosedWon = 0;
+
+            filteredOpps.forEach(opp => {
+                const key = normalize(opp.fields['Opportunity Name'] || '');
+                const acv = parseFloat(opp.fields['1st Year ACV (converted)'] || 0);
+                const isWon = opp.fields['Stage'] === 'Closed Won' || opp.fields['Stage'] === '8 - Closed Won';
+                if (mktByOpp[key]) {
+                    coInfluencedCount++;
+                    coInfluencedPipeline += acv;
+                    if (isWon) coInfluencedClosedWon += acv;
+                } else {
+                    sealOnlyCount++;
+                    sealOnlyPipeline += acv;
+                    if (isWon) sealOnlyClosedWon += acv;
+                }
+            });
+
+            // Marketing-only opps (Looker tracked but no SEAL touch)
+            let marketingOnlyCount = 0, marketingOnlyPipeline = 0, marketingOnlyClosedWon = 0;
+            mktFiltered.forEach(row => {
+                const key = normalize(row['Opportunity Name'] || '');
+                if (!sealOppNames.has(key)) {
+                    marketingOnlyCount++;
+                    marketingOnlyPipeline += parseFloat(row['Sum of Stage 1 Plus New Business and Expansion One Year Acv USD'] || 0);
+                    marketingOnlyClosedWon += parseFloat(row['Sum of Closed Won Total Op Revenue Model USD'] || 0);
+                }
+            });
+
+            const combinedPipeline = sealOnlyPipeline + coInfluencedPipeline + marketingOnlyPipeline;
+            const combinedClosedWon = sealOnlyClosedWon + coInfluencedClosedWon + marketingOnlyClosedWon;
+
+            const marketingAttribution = {
+                hasData: marketingData.length > 0,
+                mktFilteredCount: mktFiltered.length,
+                coInfluencedCount,
+                coInfluencedPipeline,
+                coInfluencedClosedWon,
+                sealOnlyCount,
+                sealOnlyPipeline,
+                sealOnlyClosedWon,
+                marketingOnlyCount,
+                marketingOnlyPipeline,
+                marketingOnlyClosedWon,
+                combinedPipeline,
+                combinedClosedWon
+            };
+
             return {
                 targets: {
                     totalPipeline: adminSettings.totalPipelineTarget,
@@ -1001,10 +1103,11 @@
                 },
                 monthlyGoals: monthlyGoals,
                 seals: displaySealMetrics,
-                allSeals: sealMetrics, // Keep all SEALs for the filter dropdown
+                allSeals: sealMetrics,
                 scienceBoardImpact,
                 advisorImpact,
-                chroImpact
+                chroImpact,
+                marketingAttribution
             };
         }
 
@@ -1025,17 +1128,18 @@
                 // Fetch shared config first so settings are up to date before processing
                 await fetchConfigFromAirtable(pat);
 
-                // Fetch all tables in parallel
-                const [opportunities, requests, engagements, seals, otherActivities] = await Promise.all([
+                // Fetch all tables and marketing data in parallel
+                const [opportunities, requests, engagements, seals, otherActivities, marketingData] = await Promise.all([
                     fetchAirtableTable('tblqtDoaoBNBvkEGC', 'Opportunities', pat),
                     fetchAirtableTable('tblgl22l1BJZEHuEG', 'Requests', pat),
                     fetchAirtableTable('tblqDX9oFP6kbkCyG', 'Engagements', pat),
                     fetchAirtableTable('tblOQ9esyE7TWdm58', 'SEALs', pat),
-                    fetchAirtableTable('tblh2XURhlIZO5MnY', 'OtherActivities', pat)
+                    fetchAirtableTable('tblh2XURhlIZO5MnY', 'OtherActivities', pat),
+                    fetchMarketingData()
                 ]);
 
                 // Process the data
-                const processedData = processAirtableData(opportunities, requests, engagements, seals, otherActivities);
+                const processedData = processAirtableData(opportunities, requests, engagements, seals, otherActivities, marketingData);
 
                 // Update state
                 state.metrics = processedData;
@@ -1253,12 +1357,16 @@
 
                 const { metrics, loading, lastUpdated, expandedSections, usingLiveData, dateRange, startDate, endDate } = state;
             
-            const pipelineChange = calculateChange(metrics.sealTeam.totalPipelineInfluenced, metrics.previousPeriod.totalPipelineInfluenced);
-            const closedWonChange = calculateChange(metrics.sealTeam.closedWonACV, metrics.previousPeriod.closedWonACV);
+            const mkt = metrics.marketingAttribution || { hasData: false };
+            const displayPipeline = mkt.hasData ? mkt.combinedPipeline : metrics.sealTeam.totalPipelineInfluenced;
+            const displayClosedWon = mkt.hasData ? mkt.combinedClosedWon : metrics.sealTeam.closedWonACV;
+
+            const pipelineChange = calculateChange(displayPipeline, metrics.previousPeriod.totalPipelineInfluenced);
+            const closedWonChange = calculateChange(displayClosedWon, metrics.previousPeriod.closedWonACV);
             const requestsChange = calculateChange(metrics.sealTeam.sealRequests, metrics.previousPeriod.sealRequests);
 
-            const pipelineProgress = (metrics.targets.currentPipeline / metrics.targets.totalPipeline) * 100;
-            const closedWonProgress = (metrics.targets.currentClosedWon / metrics.targets.closedWonTarget) * 100;
+            const pipelineProgress = (displayPipeline / metrics.targets.totalPipeline) * 100;
+            const closedWonProgress = (displayClosedWon / metrics.targets.closedWonTarget) * 100;
             const eventsProgress = (metrics.targets.currentEvents / metrics.targets.strategicEvents) * 100;
 
             const pipelineROI = metrics.sealTeam.totalPipelineInfluenced / metrics.sealTeam.totalSpend;
@@ -1413,8 +1521,8 @@
                                 <div class="bg-white/10 backdrop-blur-lg rounded-lg p-6 border border-white/20">
                                     <div class="flex items-start justify-between mb-3">
                                         <div>
-                                            <p class="text-slate-300 text-sm mb-1">Total Pipeline Influenced</p>
-                                            <p class="text-4xl font-bold text-white">${formatCurrency(metrics.sealTeam.totalPipelineInfluenced)}</p>
+                                            <p class="text-slate-300 text-sm mb-1">Total Pipeline Influenced${mkt.hasData ? ' <span class="text-purple-300">(SEAL + Mktg)</span>' : ''}</p>
+                                            <p class="text-4xl font-bold text-white">${formatCurrency(displayPipeline)}</p>
                                         </div>
                                         <div class="flex items-center gap-1 text-sm ${pipelineChange.isPositive ? 'text-green-400' : 'text-red-400'}">
                                             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1426,13 +1534,20 @@
                                     <div class="text-slate-400 text-xs">
                                         vs. previous period: ${formatCurrency(metrics.previousPeriod.totalPipelineInfluenced)}
                                     </div>
+                                    ${mkt.hasData ? `
+                                    <div class="mt-3 pt-2 border-t border-white/20 grid grid-cols-3 gap-1 text-xs">
+                                        <div><p class="text-blue-300">SEAL only</p><p class="text-white font-semibold">${formatCurrency(mkt.sealOnlyPipeline)}</p></div>
+                                        <div><p class="text-purple-300">Co-influenced</p><p class="text-white font-semibold">${formatCurrency(mkt.coInfluencedPipeline)}</p></div>
+                                        <div><p class="text-green-300">Mktg only</p><p class="text-white font-semibold">${formatCurrency(mkt.marketingOnlyPipeline)}</p></div>
+                                    </div>
+                                    ` : ''}
                                 </div>
 
                                 <div class="bg-white/10 backdrop-blur-lg rounded-lg p-6 border border-white/20">
                                     <div class="flex items-start justify-between mb-3">
                                         <div>
-                                            <p class="text-slate-300 text-sm mb-1">Closed Won ACV</p>
-                                            <p class="text-4xl font-bold text-white">${formatCurrency(metrics.sealTeam.closedWonACV)}</p>
+                                            <p class="text-slate-300 text-sm mb-1">Closed Won ACV${mkt.hasData ? ' <span class="text-purple-300">(SEAL + Mktg)</span>' : ''}</p>
+                                            <p class="text-4xl font-bold text-white">${formatCurrency(displayClosedWon)}</p>
                                         </div>
                                         <div class="flex items-center gap-1 text-sm ${closedWonChange.isPositive ? 'text-green-400' : 'text-red-400'}">
                                             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1444,6 +1559,13 @@
                                     <div class="text-slate-400 text-xs">
                                         vs. previous period: ${formatCurrency(metrics.previousPeriod.closedWonACV)}
                                     </div>
+                                    ${mkt.hasData ? `
+                                    <div class="mt-3 pt-2 border-t border-white/20 grid grid-cols-3 gap-1 text-xs">
+                                        <div><p class="text-blue-300">SEAL only</p><p class="text-white font-semibold">${formatCurrency(mkt.sealOnlyClosedWon)}</p></div>
+                                        <div><p class="text-purple-300">Co-influenced</p><p class="text-white font-semibold">${formatCurrency(mkt.coInfluencedClosedWon)}</p></div>
+                                        <div><p class="text-green-300">Mktg only</p><p class="text-white font-semibold">${formatCurrency(mkt.marketingOnlyClosedWon)}</p></div>
+                                    </div>
+                                    ` : ''}
                                 </div>
 
                                 <div class="bg-white/10 backdrop-blur-lg rounded-lg p-6 border border-white/20">
@@ -1495,9 +1617,9 @@
                                 <!-- Pipeline Goal -->
                                 <div>
                                     <div class="flex items-center justify-between mb-2">
-                                        <span class="text-sm font-semibold text-gray-700">Total Pipeline</span>
+                                        <span class="text-sm font-semibold text-gray-700">Total Pipeline${mkt.hasData ? ' <span class="text-purple-600 text-xs font-normal">(SEAL + Mktg)</span>' : ''}</span>
                                         <div class="text-right">
-                                            <span class="text-lg font-bold text-gray-900">${formatCurrency(metrics.targets.currentPipeline)}</span>
+                                            <span class="text-lg font-bold text-gray-900">${formatCurrency(displayPipeline)}</span>
                                             <span class="text-sm text-gray-500"> / ${formatCurrency(metrics.targets.totalPipeline)}</span>
                                             <span class="ml-2 text-sm font-semibold ${pipelineProgress >= 100 ? 'text-green-600' : pipelineProgress >= 75 ? 'text-yellow-600' : 'text-red-600'}">
                                                 ${pipelineProgress.toFixed(0)}%
@@ -1505,7 +1627,7 @@
                                         </div>
                                     </div>
                                     <div class="w-full bg-gray-200 rounded-full h-3 overflow-hidden">
-                                        <div class="h-full transition-all duration-500 ${pipelineProgress >= 100 ? 'bg-green-500' : pipelineProgress >= 75 ? 'bg-yellow-500' : 'bg-red-500'}" 
+                                        <div class="h-full transition-all duration-500 ${pipelineProgress >= 100 ? 'bg-green-500' : pipelineProgress >= 75 ? 'bg-yellow-500' : 'bg-red-500'}"
                                              style="width: ${Math.min(pipelineProgress, 100)}%"></div>
                                     </div>
                                 </div>
@@ -1513,9 +1635,9 @@
                                 <!-- Closed Won Goal -->
                                 <div>
                                     <div class="flex items-center justify-between mb-2">
-                                        <span class="text-sm font-semibold text-gray-700">Closed Won ACV</span>
+                                        <span class="text-sm font-semibold text-gray-700">Closed Won ACV${mkt.hasData ? ' <span class="text-purple-600 text-xs font-normal">(SEAL + Mktg)</span>' : ''}</span>
                                         <div class="text-right">
-                                            <span class="text-lg font-bold text-gray-900">${formatCurrency(metrics.targets.currentClosedWon)}</span>
+                                            <span class="text-lg font-bold text-gray-900">${formatCurrency(displayClosedWon)}</span>
                                             <span class="text-sm text-gray-500"> / ${formatCurrency(metrics.targets.closedWonTarget)}</span>
                                             <span class="ml-2 text-sm font-semibold ${closedWonProgress >= 100 ? 'text-green-600' : closedWonProgress >= 75 ? 'text-yellow-600' : 'text-red-600'}">
                                                 ${closedWonProgress.toFixed(0)}%
@@ -1523,7 +1645,7 @@
                                         </div>
                                     </div>
                                     <div class="w-full bg-gray-200 rounded-full h-3 overflow-hidden">
-                                        <div class="h-full transition-all duration-500 ${closedWonProgress >= 100 ? 'bg-green-500' : closedWonProgress >= 75 ? 'bg-yellow-500' : 'bg-red-500'}" 
+                                        <div class="h-full transition-all duration-500 ${closedWonProgress >= 100 ? 'bg-green-500' : closedWonProgress >= 75 ? 'bg-yellow-500' : 'bg-red-500'}"
                                              style="width: ${Math.min(closedWonProgress, 100)}%"></div>
                                     </div>
                                 </div>
@@ -1980,6 +2102,62 @@
                             ` : `<p class="text-gray-500 text-center py-8">No CHRO Growth Luminary data available for this period.</p>`}
                             ` : ''}
                         </div>`;
+                    })()}
+
+                    <!-- Marketing Impact -->
+                    ${(() => {
+                        if (!mkt.hasData) return '';
+                        const coRate = (mkt.coInfluencedCount + mkt.sealOnlyCount) > 0
+                            ? ((mkt.coInfluencedCount / (mkt.coInfluencedCount + mkt.sealOnlyCount)) * 100).toFixed(0)
+                            : 0;
+                        return `
+                        <div class="bg-white rounded-xl p-8 shadow-lg mb-8">
+                            <div class="flex items-center justify-between mb-6">
+                                <div>
+                                    <h2 class="text-2xl font-bold text-gray-900 mb-1">Marketing Impact</h2>
+                                    <p class="text-gray-600">Attribution breakdown across SEAL-influenced, co-influenced, and marketing-only opportunities</p>
+                                    <p class="text-xs text-amber-600 mt-1">Note: Marketing data filtered by Stage 1 Date; SEAL data filtered by Engagement Date. ${mkt.mktFilteredCount} marketing opps matched to date range.</p>
+                                </div>
+                            </div>
+
+                            <div class="grid grid-cols-3 gap-6 mb-8">
+                                <div class="bg-blue-50 rounded-lg p-5 border border-blue-200">
+                                    <p class="text-sm font-semibold text-blue-700 mb-1">SEAL Only</p>
+                                    <p class="text-3xl font-bold text-blue-900">${formatCurrency(mkt.sealOnlyPipeline)}</p>
+                                    <p class="text-sm text-blue-600 mt-1">${mkt.sealOnlyCount} opps · pipeline</p>
+                                    <p class="text-2xl font-bold text-blue-800 mt-3">${formatCurrency(mkt.sealOnlyClosedWon)}</p>
+                                    <p class="text-sm text-blue-600">closed won</p>
+                                </div>
+                                <div class="bg-purple-50 rounded-lg p-5 border border-purple-200">
+                                    <p class="text-sm font-semibold text-purple-700 mb-1">Co-Influenced (SEAL + Mktg)</p>
+                                    <p class="text-3xl font-bold text-purple-900">${formatCurrency(mkt.coInfluencedPipeline)}</p>
+                                    <p class="text-sm text-purple-600 mt-1">${mkt.coInfluencedCount} opps · ${coRate}% of SEAL opps</p>
+                                    <p class="text-2xl font-bold text-purple-800 mt-3">${formatCurrency(mkt.coInfluencedClosedWon)}</p>
+                                    <p class="text-sm text-purple-600">closed won</p>
+                                </div>
+                                <div class="bg-green-50 rounded-lg p-5 border border-green-200">
+                                    <p class="text-sm font-semibold text-green-700 mb-1">Marketing Only</p>
+                                    <p class="text-3xl font-bold text-green-900">${formatCurrency(mkt.marketingOnlyPipeline)}</p>
+                                    <p class="text-sm text-green-600 mt-1">${mkt.marketingOnlyCount} opps · pipeline</p>
+                                    <p class="text-2xl font-bold text-green-800 mt-3">${formatCurrency(mkt.marketingOnlyClosedWon)}</p>
+                                    <p class="text-sm text-green-600">closed won</p>
+                                </div>
+                            </div>
+
+                            <div class="bg-gray-50 rounded-lg p-5 border border-gray-200">
+                                <div class="flex items-center justify-between">
+                                    <div>
+                                        <p class="text-sm font-semibold text-gray-700">Combined Program Total</p>
+                                        <p class="text-xs text-gray-500 mt-1">Each opportunity counted once. Co-influenced deals use SEAL ACV as the authoritative value.</p>
+                                    </div>
+                                    <div class="text-right">
+                                        <p class="text-3xl font-bold text-gray-900">${formatCurrency(mkt.combinedPipeline)}</p>
+                                        <p class="text-sm text-gray-600">total pipeline · ${formatCurrency(mkt.combinedClosedWon)} closed won</p>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        `;
                     })()}
 
                     <!-- Quarterly Conversion Trends -->
