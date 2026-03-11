@@ -182,6 +182,7 @@
                 executiveSummary: true,
                 goalProgress: true,
                 roiEfficiency: true,
+                repAdoption: true,
                 monthlyGoals: true,
                 sealPerformance: true,
                 stageBreakdown: true,
@@ -1189,8 +1190,12 @@
             // Rep SEAL adoption — computed from ALL opportunities (unfiltered) so reps with 0 engagements still appear
             const repAdoptionMap = {};
             opportunities.forEach(opp => {
-                const owner = opp.fields['Opportunity Owner'];
+                // Opportunity Owner may be a collaborator object {id, name, email} or a plain string
+                const rawOwner = opp.fields['Opportunity Owner'];
+                const owner = rawOwner && typeof rawOwner === 'object' ? rawOwner.name : rawOwner;
                 if (!owner) return;
+                // Skip deactivated users
+                if (owner.toLowerCase().includes('deactivated')) return;
                 if (!repAdoptionMap[owner]) repAdoptionMap[owner] = { totalOpps: 0, sealEngaged: 0 };
                 repAdoptionMap[owner].totalOpps++;
                 if (opp.fields['Seal engaged'] === true) repAdoptionMap[owner].sealEngaged++;
@@ -3143,18 +3148,26 @@
                                     <h2 class="text-2xl font-bold text-gray-900 mb-1">Rep SEAL Adoption</h2>
                                     <p class="text-gray-600">Opportunity owners using SEALs vs. total pipeline</p>
                                 </div>
-                                <div class="flex gap-6 text-sm text-right">
-                                    <div>
-                                        <p class="text-gray-500">Reps using SEALs</p>
-                                        <p class="text-2xl font-bold text-blue-600">${adoptedReps}<span class="text-gray-400 text-base font-normal"> / ${totalReps}</span></p>
+                                <div class="flex items-center gap-6">
+                                    <div class="flex gap-6 text-sm text-right">
+                                        <div>
+                                            <p class="text-gray-500">Reps using SEALs</p>
+                                            <p class="text-2xl font-bold text-blue-600">${adoptedReps}<span class="text-gray-400 text-base font-normal"> / ${totalReps}</span></p>
+                                        </div>
+                                        <div>
+                                            <p class="text-gray-500">SEAL-engaged opps</p>
+                                            <p class="text-2xl font-bold text-purple-600">${totalSealEngaged}<span class="text-gray-400 text-base font-normal"> / ${totalOpps}</span></p>
+                                        </div>
                                     </div>
-                                    <div>
-                                        <p class="text-gray-500">SEAL-engaged opps</p>
-                                        <p class="text-2xl font-bold text-purple-600">${totalSealEngaged}<span class="text-gray-400 text-base font-normal"> / ${totalOpps}</span></p>
-                                    </div>
+                                    <button onclick="toggleSection('repAdoption')" class="text-gray-600 hover:text-gray-900">
+                                        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="${expandedSections.repAdoption ? 'M5 15l7-7 7 7' : 'M19 9l-7 7-7-7'}"></path>
+                                        </svg>
+                                    </button>
                                 </div>
                             </div>
 
+                            ${expandedSections.repAdoption ? `
                             <!-- Bar Chart -->
                             <div class="mb-6 space-y-2">
                                 <div class="flex items-center gap-3 text-xs text-gray-400 mb-3 pl-40">
@@ -3165,7 +3178,6 @@
                                     const pct = r.totalOpps > 0 ? r.sealEngaged / r.totalOpps : 0;
                                     const barColor = pct >= 0.5 ? 'bg-blue-500' : pct > 0 ? 'bg-blue-400' : 'bg-gray-300';
                                     const totalWidth = (r.totalOpps / maxOpps) * 100;
-                                    const engagedWidth = r.totalOpps > 0 ? (r.sealEngaged / r.totalOpps) * 100 : 0;
                                     return `
                                     <div class="flex items-center gap-3">
                                         <div class="w-36 text-right text-sm text-gray-700 truncate flex-shrink-0" title="${r.name}">${r.name}</div>
@@ -3216,6 +3228,7 @@
                                     </tbody>
                                 </table>
                             </div>
+                            ` : ''}
                         </div>`;
                     })()}
 
