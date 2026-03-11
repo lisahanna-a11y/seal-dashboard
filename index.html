@@ -1190,9 +1190,8 @@
 
             // Rep SEAL adoption — use Opportunity Grid view if available, otherwise fall back to stage filter
             const CLOSED_STAGES = ['Closed Won', '8 - Closed Won', 'Closed Lost', '9 - Closed Lost', 'Closed/Lost'];
-            const openOpps = oppGridRecords && oppGridRecords.length > 0
-                ? oppGridRecords
-                : opportunities.filter(opp => !CLOSED_STAGES.includes(opp.fields['Stage'] || ''));
+            const sourceOpps = oppGridRecords && oppGridRecords.length > 0 ? oppGridRecords : opportunities;
+            const openOpps = sourceOpps.filter(opp => !CLOSED_STAGES.includes(opp.fields['Stage'] || ''));
 
             const repAdoptionMap = {};
             openOpps.forEach(opp => {
