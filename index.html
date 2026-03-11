@@ -1187,18 +1187,36 @@
                 combinedClosedWon
             };
 
-            // Rep SEAL adoption — computed from ALL opportunities (unfiltered) so reps with 0 engagements still appear
+            // Rep SEAL adoption — open opps only (exclude Closed Won/Lost)
+            const CLOSED_STAGES = ['Closed Won', '8 - Closed Won', 'Closed Lost', '9 - Closed Lost', 'Closed/Lost'];
+            const openOpps = opportunities.filter(opp => !CLOSED_STAGES.includes(opp.fields['Stage'] || ''));
+
+            // Debug: log field names and seal engaged values so we can verify the field name
+            if (openOpps.length > 0) {
+                console.log('[RepAdoption] Sample opp field keys:', Object.keys(openOpps[0].fields));
+                console.log('[RepAdoption] Sample Opportunity Owner:', openOpps[0].fields['Opportunity Owner']);
+                const sealEngagedSample = openOpps.find(o => o.fields['Seal engaged'] !== undefined);
+                if (sealEngagedSample) {
+                    console.log('[RepAdoption] "Seal engaged" value:', sealEngagedSample.fields['Seal engaged'], '| type:', typeof sealEngagedSample.fields['Seal engaged']);
+                } else {
+                    // Log all field keys that contain "seal" to catch casing/naming differences
+                    const sealFields = Object.keys(openOpps[0].fields).filter(k => k.toLowerCase().includes('seal'));
+                    console.log('[RepAdoption] No "Seal engaged" field found. Seal-related fields:', sealFields);
+                }
+            }
+
             const repAdoptionMap = {};
-            opportunities.forEach(opp => {
-                // Opportunity Owner may be a collaborator object {id, name, email} or a plain string
+            openOpps.forEach(opp => {
                 const rawOwner = opp.fields['Opportunity Owner'];
                 const owner = rawOwner && typeof rawOwner === 'object' ? rawOwner.name : rawOwner;
                 if (!owner) return;
-                // Skip deactivated users
-                if (owner.toLowerCase().includes('deactivated')) return;
                 if (!repAdoptionMap[owner]) repAdoptionMap[owner] = { totalOpps: 0, sealEngaged: 0 };
                 repAdoptionMap[owner].totalOpps++;
-                if (opp.fields['Seal engaged'] === true) repAdoptionMap[owner].sealEngaged++;
+                // Handle boolean true, string "true", or 1 (SFDC sync can vary)
+                const engaged = opp.fields['Seal engaged'];
+                if (engaged === true || engaged === 'true' || engaged === 1 || engaged === '1') {
+                    repAdoptionMap[owner].sealEngaged++;
+                }
             });
             const repAdoption = Object.entries(repAdoptionMap)
                 .map(([name, d]) => ({ name, totalOpps: d.totalOpps, sealEngaged: d.sealEngaged }))
