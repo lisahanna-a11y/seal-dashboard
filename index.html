@@ -55,7 +55,8 @@
             closedWonTarget: 15000000,
             strategicEventsTarget: 6,
             monthlyPipelineTarget: 6250000,
-            totalSpend: 3700000
+            fy26Spend: 3700000,
+            fy27Spend: 3700000
         };
 
         // Load admin settings — localStorage overrides hardcoded defaults (fallback only)
@@ -80,7 +81,8 @@
                     closedWonTarget: f['Closed Won ACV Target'] ?? DEFAULT_SETTINGS.closedWonTarget,
                     monthlyPipelineTarget: f['Monthly Pipeline Target'] ?? DEFAULT_SETTINGS.monthlyPipelineTarget,
                     strategicEventsTarget: f['Strategic Events Target'] ?? DEFAULT_SETTINGS.strategicEventsTarget,
-                    totalSpend: f['Total SEAL Program Spend'] ?? DEFAULT_SETTINGS.totalSpend
+                    fy26Spend: f['FY26 SEAL Program Spend'] ?? f['Total SEAL Program Spend'] ?? DEFAULT_SETTINGS.fy26Spend,
+                    fy27Spend: f['FY27 SEAL Program Spend'] ?? DEFAULT_SETTINGS.fy27Spend
                 };
                 state.adminSettings = settings;
                 localStorage.setItem('seal_admin_settings', JSON.stringify(settings));
@@ -102,7 +104,8 @@
                         'Closed Won ACV Target': settings.closedWonTarget,
                         'Monthly Pipeline Target': settings.monthlyPipelineTarget,
                         'Strategic Events Target': settings.strategicEventsTarget,
-                        'Total SEAL Program Spend': settings.totalSpend
+                        'FY26 SEAL Program Spend': settings.fy26Spend,
+                        'FY27 SEAL Program Spend': settings.fy27Spend
                     }})
                 });
                 return response.ok;
@@ -271,7 +274,8 @@
                     sealRequests: 12,
                     totalOppsInfluenced: 8,
                     closedWonACV: 350000,
-                    totalSpend: 3700000
+                    fy26Spend: 3700000,
+                    fy27Spend: 3700000
                 },
                 previousPeriod: {
                     totalPipelineInfluenced: 38000000, // Previous full FY26
@@ -1225,7 +1229,8 @@
                     sealRequests: filteredRequests.length,
                     totalOppsInfluenced: displayOpps.length,
                     closedWonACV: displayClosedWonACV,
-                    totalSpend: adminSettings.totalSpend
+                    fy26Spend: adminSettings.fy26Spend,
+                    fy27Spend: adminSettings.fy27Spend
                 },
                 previousPeriod: {
                     totalPipelineInfluenced: prevPipeline,
@@ -1419,14 +1424,25 @@
                         </div>
 
                         <div>
-                            <label class="block text-sm font-medium text-gray-700 mb-2">Total SEAL Program Spend</label>
+                            <label class="block text-sm font-medium text-gray-700 mb-2">FY26 SEAL Program Spend</label>
                             <input
                                 type="number"
-                                id="admin-spend"
-                                value="${settings.totalSpend}"
+                                id="admin-spend-fy26"
+                                value="${settings.fy26Spend}"
                                 class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
                             />
-                            <p class="text-xs text-gray-500 mt-1">Total budget/spend for SEAL program</p>
+                            <p class="text-xs text-gray-500 mt-1">Total SEAL program spend for FY26 (Feb 2025 – Jan 2026)</p>
+                        </div>
+
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-2">FY27 SEAL Program Spend</label>
+                            <input
+                                type="number"
+                                id="admin-spend-fy27"
+                                value="${settings.fy27Spend}"
+                                class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                            />
+                            <p class="text-xs text-gray-500 mt-1">Total SEAL program spend for FY27 (Feb 2026 – Jan 2027)</p>
                         </div>
                     </div>
 
@@ -1451,7 +1467,8 @@
                 monthlyPipelineTarget: parseFloat(document.getElementById('admin-monthly-target').value),
                 closedWonTarget: parseFloat(document.getElementById('admin-closed-won-target').value),
                 strategicEventsTarget: parseInt(document.getElementById('admin-events').value),
-                totalSpend: parseFloat(document.getElementById('admin-spend').value)
+                fy26Spend: parseFloat(document.getElementById('admin-spend-fy26').value),
+                fy27Spend: parseFloat(document.getElementById('admin-spend-fy27').value)
             };
 
             // Always save to localStorage
@@ -2558,9 +2575,18 @@
             const closedWonProgress = (displayClosedWon / metrics.targets.closedWonTarget) * 100;
             const eventsProgress = (metrics.targets.currentEvents / metrics.targets.strategicEvents) * 100;
 
-            const pipelineROI = metrics.sealTeam.totalPipelineInfluenced / metrics.sealTeam.totalSpend;
-            const closedWonROI = metrics.sealTeam.closedWonACV / metrics.sealTeam.totalSpend;
-            const costPerOpp = metrics.sealTeam.totalSpend / metrics.sealTeam.totalOppsInfluenced;
+            // Pick spend based on whether the active date range falls in FY26, FY27, or spans both
+            const fy26Spend = metrics.sealTeam.fy26Spend || 0;
+            const fy27Spend = metrics.sealTeam.fy27Spend || 0;
+            const activeSpend = endDate <= '2026-01-31'
+                ? fy26Spend                          // entirely FY26
+                : startDate >= '2026-02-01'
+                    ? fy27Spend                      // entirely FY27
+                    : fy26Spend + fy27Spend;         // spans both
+
+            const pipelineROI = activeSpend > 0 ? metrics.sealTeam.totalPipelineInfluenced / activeSpend : 0;
+            const closedWonROI = activeSpend > 0 ? metrics.sealTeam.closedWonACV / activeSpend : 0;
+            const costPerOpp = activeSpend > 0 && metrics.sealTeam.totalOppsInfluenced > 0 ? activeSpend / metrics.sealTeam.totalOppsInfluenced : 0;
             const efficiency = metrics.sealTeam.closedWonACV / metrics.sealTeam.totalPipelineInfluenced;
 
             const navBtn = (id, label) =>
@@ -2888,7 +2914,10 @@
                         <div class="flex items-center justify-between mb-6">
                             <div>
                                 <h2 class="text-2xl font-bold text-gray-900 mb-1">Enhanced ROI & Efficiency Metrics</h2>
-                                <p class="text-gray-600">Return on SEAL program investment</p>
+                                <p class="text-gray-600">Return on SEAL program investment &mdash; using
+                                    ${endDate <= '2026-01-31' ? 'FY26' : startDate >= '2026-02-01' ? 'FY27' : 'FY26 + FY27'} spend
+                                    (${formatCurrency(activeSpend)})
+                                </p>
                             </div>
                             <button onclick="toggleSection('roiEfficiency')" class="text-gray-600 hover:text-gray-900">
                                 <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
