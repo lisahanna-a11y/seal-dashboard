@@ -1270,7 +1270,7 @@
                     fetchAirtableTable('tblh2XURhlIZO5MnY', 'OtherActivities', pat),
                     fetchMarketingData(),
                     fetchAirtableTable(KANBAN_TABLE_ID, 'PAC Kanban', pat),
-                    fetchAirtableTable('tblqtDoaoBNBvkEGC', 'Opportunities (Grid view)', pat, 'Opportunity Grid').catch(e => { console.warn('Opportunity Grid view fetch failed, will fall back to stage filter:', e.message); return []; })
+                    fetchAirtableTable('tblMKnSY6RV3Puvvn', 'Opportunity Grid', pat)
                 ]);
 
                 // Update kanban cards from Airtable
