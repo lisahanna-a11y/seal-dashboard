@@ -387,7 +387,7 @@
         }
 
         // Fetch records from Airtable table
-        async function fetchAirtableTable(tableId, tableName, pat) {
+        async function fetchAirtableTable(tableId, tableName, pat, viewName = null) {
             const url = `https://api.airtable.com/v0/${AIRTABLE_BASE_ID}/${tableId}`;
             const allRecords = [];
             let offset = null;
@@ -395,6 +395,7 @@
             try {
                 do {
                     const params = new URLSearchParams({ pageSize: '100' });
+                    if (viewName) params.append('view', viewName);
                     if (offset) params.append('offset', offset);
 
                     const response = await fetch(`${url}?${params}`, {
@@ -458,7 +459,7 @@
         }
 
         // Process Airtable data into dashboard metrics
-        function processAirtableData(opportunities, requests, engagements, seals, otherActivities = [], marketingData = []) {
+        function processAirtableData(opportunities, requests, engagements, seals, otherActivities = [], marketingData = [], oppGridRecords = null) {
             const startDate = new Date(state.startDate);
             const endDate = new Date(state.endDate);
 
@@ -1187,9 +1188,11 @@
                 combinedClosedWon
             };
 
-            // Rep SEAL adoption — open opps only (exclude Closed Won/Lost)
+            // Rep SEAL adoption — use Opportunity Grid view if available, otherwise fall back to stage filter
             const CLOSED_STAGES = ['Closed Won', '8 - Closed Won', 'Closed Lost', '9 - Closed Lost', 'Closed/Lost'];
-            const openOpps = opportunities.filter(opp => !CLOSED_STAGES.includes(opp.fields['Stage'] || ''));
+            const openOpps = oppGridRecords && oppGridRecords.length > 0
+                ? oppGridRecords
+                : opportunities.filter(opp => !CLOSED_STAGES.includes(opp.fields['Stage'] || ''));
 
             const repAdoptionMap = {};
             openOpps.forEach(opp => {
@@ -1259,14 +1262,15 @@
                 await fetchConfigFromAirtable(pat);
 
                 // Fetch all tables, marketing data, and kanban cards in parallel
-                const [opportunities, requests, engagements, seals, otherActivities, marketingData, kanbanRecords] = await Promise.all([
+                const [opportunities, requests, engagements, seals, otherActivities, marketingData, kanbanRecords, oppGridRecords] = await Promise.all([
                     fetchAirtableTable('tblqtDoaoBNBvkEGC', 'Opportunities', pat),
                     fetchAirtableTable('tblgl22l1BJZEHuEG', 'Requests', pat),
                     fetchAirtableTable('tblqDX9oFP6kbkCyG', 'Engagements', pat),
                     fetchAirtableTable('tblOQ9esyE7TWdm58', 'SEALs', pat),
                     fetchAirtableTable('tblh2XURhlIZO5MnY', 'OtherActivities', pat),
                     fetchMarketingData(),
-                    fetchAirtableTable(KANBAN_TABLE_ID, 'PAC Kanban', pat)
+                    fetchAirtableTable(KANBAN_TABLE_ID, 'PAC Kanban', pat),
+                    fetchAirtableTable('tblqtDoaoBNBvkEGC', 'Opportunities (Grid view)', pat, 'Opportunity Grid')
                 ]);
 
                 // Update kanban cards from Airtable
@@ -1276,7 +1280,7 @@
                 }
 
                 // Process the data
-                const processedData = processAirtableData(opportunities, requests, engagements, seals, otherActivities, marketingData);
+                const processedData = processAirtableData(opportunities, requests, engagements, seals, otherActivities, marketingData, oppGridRecords);
 
                 // Update state
                 state.metrics = processedData;
