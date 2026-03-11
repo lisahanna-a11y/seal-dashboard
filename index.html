@@ -181,6 +181,7 @@
             expandedSections: {
                 executiveSummary: true,
                 goalProgress: true,
+                roiEfficiency: true,
                 monthlyGoals: true,
                 sealPerformance: true,
                 stageBreakdown: true,
@@ -2560,6 +2561,7 @@
                         <div class="flex gap-1 py-2 whitespace-nowrap">
                             ${navBtn('sec-exec', 'Executive Summary')}
                             ${navBtn('sec-goals', 'Goal Progress')}
+                            ${navBtn('sec-roi', 'ROI & Efficiency')}
                             ${navBtn('sec-monthly', 'Monthly Targets')}
                             ${navBtn('sec-seals', 'SEAL Performance')}
                             ${navBtn('sec-stages', 'Stage Breakdown')}
@@ -2570,7 +2572,6 @@
                             ${mkt.hasData ? navBtn('sec-marketing', 'Marketing Impact') : ''}
                             ${navBtn('sec-trends', 'Quarterly Trends')}
                             ${navBtn('sec-pipeline', 'Pipeline Stages')}
-                            ${navBtn('sec-roi', 'ROI & Efficiency')}
                         </div>
                     </div>
                 </div>`;
@@ -2868,6 +2869,40 @@
                                 </div>
 
                             </div>
+                        ` : ''}
+                    </div>
+
+                    <!-- ROI & Efficiency (moved here from bottom) -->
+                    <div id="sec-roi" class="bg-white rounded-xl p-8 shadow-lg mb-8">
+                        <div class="flex items-center justify-between mb-6">
+                            <div>
+                                <h2 class="text-2xl font-bold text-gray-900 mb-1">Enhanced ROI & Efficiency Metrics</h2>
+                                <p class="text-gray-600">Return on SEAL program investment</p>
+                            </div>
+                            <button onclick="toggleSection('roiEfficiency')" class="text-gray-600 hover:text-gray-900">
+                                <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="${expandedSections.roiEfficiency ? 'M5 15l7-7 7 7' : 'M19 9l-7 7-7-7'}"></path>
+                                </svg>
+                            </button>
+                        </div>
+                        ${expandedSections.roiEfficiency ? `
+                        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                            <div class="text-center p-6 bg-gradient-to-br from-green-50 to-green-100 rounded-lg border-2 border-green-200">
+                                <p class="text-gray-700 text-sm font-semibold mb-3">Pipeline ROI</p>
+                                <p class="text-5xl font-bold text-green-700 mb-2">$${pipelineROI.toFixed(1)}</p>
+                                <p class="text-sm text-gray-600">pipeline influenced per $1 spent</p>
+                            </div>
+                            <div class="text-center p-6 bg-gradient-to-br from-blue-50 to-blue-100 rounded-lg border-2 border-blue-200">
+                                <p class="text-gray-700 text-sm font-semibold mb-3">Closed Won ROI</p>
+                                <p class="text-5xl font-bold text-blue-700 mb-2">$${closedWonROI.toFixed(2)}</p>
+                                <p class="text-sm text-gray-600">revenue per $1 invested</p>
+                            </div>
+                            <div class="text-center p-6 bg-gradient-to-br from-purple-50 to-purple-100 rounded-lg border-2 border-purple-200">
+                                <p class="text-gray-700 text-sm font-semibold mb-3">Conversion Efficiency</p>
+                                <p class="text-5xl font-bold text-purple-700 mb-2">${formatPercent(efficiency)}</p>
+                                <p class="text-sm text-gray-600">of influenced pipeline closed</p>
+                            </div>
+                        </div>
                         ` : ''}
                     </div>
 
@@ -3678,28 +3713,6 @@
                                 }).join('')}
                             </div>
                         ` : '<p class="text-gray-500 text-center py-8">No pipeline progression data available</p>'}
-                    </div>
-
-                    <!-- Enhanced ROI -->
-                    <div id="sec-roi" class="bg-white rounded-xl p-8 shadow-lg mb-8">
-                        <h2 class="text-2xl font-bold text-gray-900 mb-6">Enhanced ROI & Efficiency Metrics</h2>
-                        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                            <div class="text-center p-6 bg-gradient-to-br from-green-50 to-green-100 rounded-lg border-2 border-green-200">
-                                <p class="text-gray-700 text-sm font-semibold mb-3">Pipeline ROI</p>
-                                <p class="text-5xl font-bold text-green-700 mb-2">$${pipelineROI.toFixed(1)}</p>
-                                <p class="text-sm text-gray-600">pipeline influenced per $1 spent</p>
-                            </div>
-                            <div class="text-center p-6 bg-gradient-to-br from-blue-50 to-blue-100 rounded-lg border-2 border-blue-200">
-                                <p class="text-gray-700 text-sm font-semibold mb-3">Closed Won ROI</p>
-                                <p class="text-5xl font-bold text-blue-700 mb-2">$${closedWonROI.toFixed(2)}</p>
-                                <p class="text-sm text-gray-600">revenue per $1 invested</p>
-                            </div>
-                            <div class="text-center p-6 bg-gradient-to-br from-purple-50 to-purple-100 rounded-lg border-2 border-purple-200">
-                                <p class="text-gray-700 text-sm font-semibold mb-3">Conversion Efficiency</p>
-                                <p class="text-5xl font-bold text-purple-700 mb-2">${formatPercent(efficiency)}</p>
-                                <p class="text-sm text-gray-600">of influenced pipeline closed</p>
-                            </div>
-                        </div>
                     </div>
 
                     <!-- Footer -->
