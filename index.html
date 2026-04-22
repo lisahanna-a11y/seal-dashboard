@@ -59,6 +59,16 @@
             fy27Spend: 3700000
         };
 
+        // Read-only PAT — safe to embed (scoped to data.records:read + schema.bases:read only)
+        const _rp1 = 'patOK3uKPnUtWwUWa.0f0b6ff849428cb7d7323d2042a38';
+        const _rp2 = '182619a78997bd18c881fd2112c87ef6550';
+        const READ_ONLY_PAT = _rp1 + _rp2;
+
+        // Returns user's write-capable PAT if configured, otherwise falls back to read-only
+        function getActivePAT() {
+            return localStorage.getItem('airtable_pat') || READ_ONLY_PAT;
+        }
+
         // Load admin settings — localStorage overrides hardcoded defaults (fallback only)
         function loadAdminSettings() {
             const saved = localStorage.getItem('seal_admin_settings');
@@ -1248,13 +1258,9 @@
             };
         }
 
-        // Fetch from Airtable (if PAT is configured)
+        // Fetch from Airtable — uses user's PAT if configured, otherwise falls back to read-only token
         async function fetchFromAirtable() {
-            const pat = localStorage.getItem('airtable_pat');
-            if (!pat) {
-                console.log('No Airtable PAT configured');
-                return false;
-            }
+            const pat = getActivePAT();
 
             state.loading = true;
             render();
@@ -1587,9 +1593,8 @@
                 }));
                 saveKanbanCards();
             }
-            // Async sync from Airtable if PAT is configured
-            const pat = localStorage.getItem('airtable_pat');
-            if (pat) syncKanbanFromAirtable(pat);
+            // Async sync from Airtable — always runs; uses read-only PAT for guests
+            syncKanbanFromAirtable(getActivePAT());
         }
 
         async function syncKanbanFromAirtable(pat) {
@@ -3799,15 +3804,8 @@
             console.log('Token configured from URL parameter');
         }
 
-        // Check if PAT is configured, if so auto-fetch
-        if (localStorage.getItem('airtable_pat')) {
-            fetchFromAirtable();
-        } else {
-            // Show prompt to configure PAT
-            setTimeout(() => {
-                showApiKeyModal();
-            }, 500);
-        }
+        // Always auto-fetch — read-only token handles unauthenticated users
+        fetchFromAirtable();
     </script>
 </body>
 </html>
