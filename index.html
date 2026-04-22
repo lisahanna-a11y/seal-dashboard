@@ -204,6 +204,7 @@
                 advisorImpact: true,
                 chroImpact: true
             },
+            showMonthlyOpps: false,
             metrics: getSampleData(),
             activeView: 'dashboard',
             kanbanCards: [],
@@ -961,11 +962,25 @@
 
                 monthlyGoals.push({
                     month: `${months[i]} ${years[i]}`,
-                    target: adminSettings.monthlyPipelineTarget,
+                    target: (i + 1) * adminSettings.monthlyPipelineTarget,
                     actual: monthPipeline,
-                    closedWon: monthClosedWon
+                    closedWon: monthClosedWon,
+                    opps: monthOpps.map(opp => ({
+                        name: opp.fields['Opportunity Name'] || 'Unnamed',
+                        account: opp.fields['Account Name'] || '',
+                        acv: parseFloat(opp.fields['1st Year ACV (converted)'] || 0),
+                        stage: opp.fields['Stage'] || '',
+                        seal: opp.fields['SEAL Name'] || ''
+                    }))
                 });
             }
+
+            // Compute cumulative actuals across months
+            let runningActual = 0;
+            monthlyGoals.forEach(m => {
+                runningActual += m.actual;
+                m.cumulativeActual = runningActual;
+            });
 
             // Calculate conversion rate
             const conversionRate = totalPipeline > 0 ? closedWonACV / totalPipeline : 0;
@@ -2967,11 +2982,17 @@
                                         'Track monthly progress'}
                                 </p>
                             </div>
-                            <button onclick="toggleSection('monthlyGoals')" class="text-gray-600 hover:text-gray-900">
-                                <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="${expandedSections.monthlyGoals ? 'M5 15l7-7 7 7' : 'M19 9l-7 7-7-7'}"></path>
-                                </svg>
-                            </button>
+                            <div class="flex items-center gap-3">
+                                <button onclick="state.showMonthlyOpps = !state.showMonthlyOpps; render();"
+                                    class="text-sm px-3 py-1.5 rounded-lg border font-medium transition-colors ${state.showMonthlyOpps ? 'bg-pink-600 text-white border-pink-600' : 'bg-white text-gray-600 border-gray-300 hover:border-pink-400 hover:text-pink-600'}">
+                                    ${state.showMonthlyOpps ? 'Hide Opps' : 'View Opps'}
+                                </button>
+                                <button onclick="toggleSection('monthlyGoals')" class="text-gray-600 hover:text-gray-900">
+                                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="${expandedSections.monthlyGoals ? 'M5 15l7-7 7 7' : 'M19 9l-7 7-7-7'}"></path>
+                                    </svg>
+                                </button>
+                            </div>
                         </div>
 
                         ${expandedSections.monthlyGoals ? `
@@ -2980,8 +3001,8 @@
                                     <thead>
                                         <tr class="border-b-2 border-gray-300">
                                             <th class="text-left py-3 px-4 text-sm font-semibold text-gray-700">Month</th>
-                                            <th class="text-right py-3 px-4 text-sm font-semibold text-gray-700">Target</th>
-                                            <th class="text-right py-3 px-4 text-sm font-semibold text-gray-700">Actual</th>
+                                            <th class="text-right py-3 px-4 text-sm font-semibold text-gray-700">Cumulative Target</th>
+                                            <th class="text-right py-3 px-4 text-sm font-semibold text-gray-700">Cumulative Pipeline</th>
                                             <th class="text-right py-3 px-4 text-sm font-semibold text-gray-700">Closed Won</th>
                                             <th class="text-center py-3 px-4 text-sm font-semibold text-gray-700">Progress</th>
                                             <th class="text-right py-3 px-4 text-sm font-semibold text-gray-700">% to Goal</th>
@@ -2989,24 +3010,56 @@
                                     </thead>
                                     <tbody>
                                         ${metrics.monthlyGoals.map((month) => {
-                                            const progress = (month.actual / month.target) * 100;
-                                            const isComplete = month.actual > 0;
+                                            const cumActual = month.cumulativeActual || 0;
+                                            const progress = month.target > 0 ? (cumActual / month.target) * 100 : 0;
+                                            const isComplete = cumActual > 0;
+                                            const oppRows = state.showMonthlyOpps && month.opps && month.opps.length > 0 ? `
+                                                <tr class="bg-gray-50">
+                                                    <td colspan="6" class="px-4 pb-2 pt-1">
+                                                        <table class="w-full text-xs">
+                                                            <thead>
+                                                                <tr class="text-gray-500 border-b border-gray-200">
+                                                                    <th class="text-left py-1 pr-4 font-medium">Account</th>
+                                                                    <th class="text-left py-1 pr-4 font-medium">Opportunity</th>
+                                                                    <th class="text-left py-1 pr-4 font-medium">SEAL</th>
+                                                                    <th class="text-left py-1 pr-4 font-medium">Stage</th>
+                                                                    <th class="text-right py-1 font-medium">ACV</th>
+                                                                </tr>
+                                                            </thead>
+                                                            <tbody>
+                                                                ${month.opps.map(o => `
+                                                                    <tr class="border-b border-gray-100">
+                                                                        <td class="py-1 pr-4 text-gray-700">${o.account}</td>
+                                                                        <td class="py-1 pr-4 text-gray-600 max-w-xs truncate">${o.name}</td>
+                                                                        <td class="py-1 pr-4 text-gray-600">${Array.isArray(o.seal) ? o.seal.join(', ') : o.seal}</td>
+                                                                        <td class="py-1 pr-4 ${o.stage.includes('Closed Won') ? 'text-green-600 font-medium' : 'text-gray-600'}">${o.stage}</td>
+                                                                        <td class="py-1 text-right font-medium text-gray-800">${formatCurrency(o.acv)}</td>
+                                                                    </tr>
+                                                                `).join('')}
+                                                            </tbody>
+                                                        </table>
+                                                    </td>
+                                                </tr>
+                                            ` : (state.showMonthlyOpps && isComplete ? `
+                                                <tr class="bg-gray-50"><td colspan="6" class="px-4 py-2 text-xs text-gray-400 italic">No opps with SEAL engagement date in this month</td></tr>
+                                            ` : '');
                                             return `
                                                 <tr class="border-b border-gray-200 hover:bg-gray-50 ${!isComplete ? 'opacity-50' : ''}">
                                                     <td class="py-3 px-4 text-sm font-medium text-gray-900">${month.month}</td>
                                                     <td class="py-3 px-4 text-sm text-right text-gray-700">${formatCurrency(month.target)}</td>
-                                                    <td class="py-3 px-4 text-sm text-right font-semibold text-gray-900">${month.actual > 0 ? formatCurrency(month.actual) : '-'}</td>
+                                                    <td class="py-3 px-4 text-sm text-right font-semibold text-gray-900">${isComplete ? formatCurrency(cumActual) : '-'}</td>
                                                     <td class="py-3 px-4 text-sm text-right text-green-600 font-semibold">${month.closedWon > 0 ? formatCurrency(month.closedWon) : '-'}</td>
                                                     <td class="py-3 px-4">
                                                         <div class="w-24 mx-auto bg-gray-200 rounded-full h-2 overflow-hidden">
-                                                            <div class="${progress >= 100 ? 'bg-green-500' : progress >= 75 ? 'bg-yellow-500' : 'bg-red-500'} h-full" 
+                                                            <div class="${progress >= 100 ? 'bg-green-500' : progress >= 75 ? 'bg-yellow-500' : 'bg-red-500'} h-full"
                                                                  style="width: ${Math.min(progress, 100)}%"></div>
                                                         </div>
                                                     </td>
                                                     <td class="py-3 px-4 text-sm text-right font-bold ${progress >= 100 ? 'text-green-600' : progress >= 75 ? 'text-yellow-600' : 'text-red-600'}">
-                                                        ${month.actual > 0 ? `${progress.toFixed(0)}%` : '-'}
+                                                        ${isComplete ? `${progress.toFixed(0)}%` : '-'}
                                                     </td>
                                                 </tr>
+                                                ${oppRows}
                                             `;
                                         }).join('')}
                                     </tbody>
