@@ -1273,7 +1273,7 @@
 
                 // Fetch all tables, marketing data, and kanban cards in parallel
                 const [opportunities, requests, engagements, seals, otherActivities, marketingData, kanbanRecords, oppGridRecords] = await Promise.all([
-                    fetchAirtableTable('tblqtDoaoBNBvkEGC', 'Opportunities', pat),
+                    fetchAirtableTable('tblqtDoaoBNBvkEGC', 'Opportunities', pat, 'All influenced Opps'),
                     fetchAirtableTable('tblgl22l1BJZEHuEG', 'Requests', pat),
                     fetchAirtableTable('tblqDX9oFP6kbkCyG', 'Engagements', pat),
                     fetchAirtableTable('tblOQ9esyE7TWdm58', 'SEALs', pat),
