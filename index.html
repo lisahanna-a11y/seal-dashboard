@@ -2189,8 +2189,6 @@
             const filterBtn = (val, label) => `<button onclick="state.coSellingFilter='${val}'; render();"
                 class="px-4 py-1.5 rounded-full text-sm font-medium border transition-colors ${filter === val ? 'bg-slate-800 text-white border-slate-800' : 'bg-white text-gray-600 border-gray-300 hover:border-slate-400'}">${label}</button>`;
             const canWrite = !!localStorage.getItem('airtable_pat');
-            const statusOptions = ['Not Started', 'Exploring', 'Active', 'In Progress', 'On Hold', 'Complete'];
-
             // Build opp lookup map from raw opportunities
             const oppMap = {};
             (state.rawOpportunities || []).forEach(o => { oppMap[o.id] = o.fields; });
@@ -2263,13 +2261,13 @@
                                     <td class="py-4 px-4 text-sm text-gray-600 align-top">${(f['Segment / Category'] || '').replace(/</g,'&lt;')}</td>
                                     <td class="py-4 px-4 text-sm text-gray-700 align-top leading-relaxed">${(f['Co-Sell Motion'] || '').replace(/</g,'&lt;')}</td>
                                     <td class="py-4 px-4 text-sm text-gray-600 align-top">${(f['Target Contacts'] || '').replace(/</g,'&lt;')}</td>
-                                    <td class="py-4 px-4 align-top">
+                                    <td class="py-4 px-4 text-sm text-gray-700 align-top">
                                         ${canWrite
-                                            ? `<select onchange="updateCoSellingRecord('${p.id}', {'Status': this.value})"
-                                                class="w-full text-xs border border-gray-200 rounded px-2 py-1.5 text-gray-700 focus:outline-none focus:border-pink-400 bg-white cursor-pointer">
-                                                ${statusOptions.map(s => `<option value="${s}" ${(f['Status'] || '') === s ? 'selected' : ''}>${s}</option>`).join('')}
-                                            </select>`
-                                            : `<span class="text-sm text-gray-700">${f['Status'] || ''}</span>`}
+                                            ? `<div contenteditable="true" data-record-id="${p.id}"
+                                                onblur="updateCoSellingRecord(this.dataset.recordId, {'Status': this.innerText.trim()})"
+                                                class="min-h-[1.5rem] rounded px-1 -mx-1 hover:bg-yellow-50 focus:bg-yellow-50 focus:outline focus:outline-2 focus:outline-yellow-300 cursor-text"
+                                                >${(f['Status'] || '').replace(/</g,'&lt;')}</div>`
+                                            : `<span>${(f['Status'] || '').replace(/</g,'&lt;')}</span>`}
                                     </td>
                                     <td class="py-4 px-4 align-top">${oppsCell}</td>
                                     <td class="py-4 px-4 align-top text-right">
