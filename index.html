@@ -2136,24 +2136,64 @@
             </div>`;
         }
 
+        function filterOppDropdown(partnerId, query) {
+            const dropdown = document.getElementById('opp-dropdown-' + partnerId);
+            if (!dropdown) return;
+            if (!query.trim()) { dropdown.classList.add('hidden'); return; }
+            const q = query.toLowerCase();
+            const matches = (state.rawOpportunities || [])
+                .filter(o => {
+                    const name = ((o.fields['Account Name'] || '') + ' ' + (o.fields['Opportunity Name'] || '')).toLowerCase();
+                    return name.includes(q);
+                })
+                .slice(0, 25);
+            if (matches.length === 0) {
+                dropdown.innerHTML = '<div class="px-3 py-2 text-xs text-gray-400 italic">No matches</div>';
+                dropdown.classList.remove('hidden');
+                return;
+            }
+            dropdown.innerHTML = matches.map(o => {
+                const acv = o.fields['1st Year ACV (converted)'];
+                return `<div onclick="selectOppForPartner('${partnerId}', '${o.id}')"
+                    class="px-3 py-2 text-xs hover:bg-pink-50 cursor-pointer border-b border-gray-50 last:border-0 flex items-center justify-between gap-2">
+                    <span>
+                        <span class="font-medium text-gray-800">${(o.fields['Account Name'] || 'Unknown').replace(/</g,'&lt;')}</span>
+                        ${o.fields['Opportunity Name'] ? `<span class="text-gray-400 ml-1">· ${(o.fields['Opportunity Name'] || '').substring(0,35).replace(/</g,'&lt;')}</span>` : ''}
+                    </span>
+                    ${acv ? `<span class="text-green-600 font-semibold flex-shrink-0">$${Number(acv).toLocaleString()}</span>` : ''}
+                </div>`;
+            }).join('');
+            dropdown.classList.remove('hidden');
+        }
+
+        function hideOppDropdown(partnerId) {
+            const el = document.getElementById('opp-dropdown-' + partnerId);
+            if (el) el.classList.add('hidden');
+        }
+
+        function selectOppForPartner(partnerId, oppId) {
+            const input = document.getElementById('opp-input-' + partnerId);
+            if (input) input.value = '';
+            hideOppDropdown(partnerId);
+            linkOppToPartner(partnerId, oppId);
+        }
+
         function renderCoSellingView() {
             const partners = state.coSellingPartners;
             const filter = state.coSellingFilter;
-            const filtered = filter === 'all' ? partners : partners.filter(p => p.fields['Priority'] === filter);
-            const priorityColor = { High: 'text-red-600 bg-red-50 border-red-200', Medium: 'text-yellow-600 bg-yellow-50 border-yellow-200', Low: 'text-green-600 bg-green-50 border-green-200' };
+            const priorityOrder = { High: 0, Medium: 1, Low: 2 };
+            const filtered = (filter === 'all' ? partners : partners.filter(p => p.fields['Priority'] === filter))
+                .slice()
+                .sort((a, b) => (priorityOrder[a.fields['Priority']] ?? 3) - (priorityOrder[b.fields['Priority']] ?? 3));
+            const priorityColor = { High: 'text-red-600 bg-red-50 border-red-200', Medium: 'text-yellow-600 bg-yellow-50 border-yellow-200', Low: 'text-blue-600 bg-blue-50 border-blue-200' };
             const filterBtn = (val, label) => `<button onclick="state.coSellingFilter='${val}'; render();"
                 class="px-4 py-1.5 rounded-full text-sm font-medium border transition-colors ${filter === val ? 'bg-slate-800 text-white border-slate-800' : 'bg-white text-gray-600 border-gray-300 hover:border-slate-400'}">${label}</button>`;
             const canWrite = !!localStorage.getItem('airtable_pat');
+            const statusOptions = ['Not Started', 'Exploring', 'Active', 'In Progress', 'On Hold', 'Complete'];
 
             // Build opp lookup map from raw opportunities
             const oppMap = {};
             (state.rawOpportunities || []).forEach(o => { oppMap[o.id] = o.fields; });
-
-            // Opp dropdown options for linking
-            const oppOptions = (state.rawOpportunities || [])
-                .filter(o => o.fields['Account Name'] || o.fields['Opportunity Name'])
-                .map(o => `<option value="${o.id}">${o.fields['Account Name'] || ''} — ${(o.fields['Opportunity Name'] || '').substring(0, 50)}</option>`)
-                .join('');
 
             const modal = state.showAddPartnerModal ? renderAddPartnerModal() : '';
 
@@ -2167,7 +2207,7 @@
                         ${filterBtn('all', 'All')}
                         ${filterBtn('High', '🔴 High')}
                         ${filterBtn('Medium', '🟡 Medium')}
-                        ${filterBtn('Low', '🟢 Low')}
+                        ${filterBtn('Low', '🔵 Low')}
                         ${canWrite ? `<button onclick="state.showAddPartnerModal=true; render();"
                             class="ml-2 px-4 py-1.5 rounded-full text-sm font-semibold bg-pink-600 text-white hover:bg-pink-700 transition-colors">+ Add Partner</button>` : ''}
                     </div>
@@ -2179,51 +2219,62 @@
                                 <th class="text-left py-3 px-4 text-sm font-semibold w-36">Partner</th>
                                 <th class="text-left py-3 px-4 text-sm font-semibold w-36">Segment / Category</th>
                                 <th class="text-left py-3 px-4 text-sm font-semibold">Co-Sell Motion</th>
-                                <th class="text-left py-3 px-4 text-sm font-semibold w-40">Target Contacts</th>
-                                <th class="text-left py-3 px-4 text-sm font-semibold w-48">Status</th>
+                                <th class="text-left py-3 px-4 text-sm font-semibold w-36">Target Contacts</th>
+                                <th class="text-left py-3 px-4 text-sm font-semibold w-36">Status</th>
                                 <th class="text-left py-3 px-4 text-sm font-semibold w-48">Linked Opps</th>
+                                <th class="text-right py-3 px-4 text-sm font-semibold w-28">ACV Total</th>
                                 <th class="text-center py-3 px-4 text-sm font-semibold w-24">Priority</th>
                             </tr>
                         </thead>
                         <tbody>
-                            ${filtered.length === 0 ? `<tr><td colspan="7" class="py-12 text-center text-gray-400">No partners found</td></tr>` :
+                            ${filtered.length === 0 ? `<tr><td colspan="8" class="py-12 text-center text-gray-400">No partners found</td></tr>` :
                             filtered.map((p, idx) => {
                                 const f = p.fields;
                                 const pri = f['Priority'] || '';
                                 const pc = priorityColor[pri] || 'text-gray-600 bg-gray-50 border-gray-200';
                                 const linkedIds = (f['Linked Opportunities'] || []).map(r => r.id || r);
                                 const linkedOpps = linkedIds.map(id => oppMap[id]).filter(Boolean);
+                                const acvTotal = linkedOpps.reduce((sum, o) => sum + (Number(o['1st Year ACV (converted)']) || 0), 0);
 
                                 const oppsCell = `
                                     <div class="space-y-1">
-                                        ${linkedOpps.map(o => `
+                                        ${linkedOpps.map((o, i) => `
                                             <div class="flex items-center gap-1 group">
-                                                <span class="text-xs text-gray-700 font-medium">${o['Account Name'] || 'Unknown'}</span>
-                                                <span class="text-xs text-gray-400">${o['1st Year ACV (converted)'] ? '· $' + Number(o['1st Year ACV (converted)']).toLocaleString() : ''}</span>
-                                                ${canWrite ? `<button onclick="unlinkOppFromPartner('${p.id}', '${linkedIds[linkedOpps.indexOf(o)]}')"
+                                                <span class="text-xs text-gray-700 font-medium">${(o['Account Name'] || 'Unknown').replace(/</g,'&lt;')}</span>
+                                                ${canWrite ? `<button onclick="unlinkOppFromPartner('${p.id}', '${linkedIds[i]}')"
                                                     class="opacity-0 group-hover:opacity-100 ml-1 text-gray-300 hover:text-red-400 text-xs leading-none transition-opacity" title="Unlink">✕</button>` : ''}
                                             </div>`).join('')}
-                                        ${canWrite ? `<select onchange="if(this.value){linkOppToPartner('${p.id}', this.value); this.value='';}"
-                                            class="mt-1 w-full text-xs border border-dashed border-gray-300 rounded px-1 py-0.5 text-gray-400 hover:border-pink-400 focus:outline-none focus:border-pink-400 cursor-pointer bg-transparent">
-                                            <option value="">+ Link opp...</option>
-                                            ${oppOptions}
-                                        </select>` : (linkedOpps.length === 0 ? '<span class="text-xs text-gray-300">—</span>' : '')}
+                                        ${canWrite ? `
+                                            <div class="relative mt-1">
+                                                <input type="text"
+                                                    id="opp-input-${p.id}"
+                                                    placeholder="Search to link..."
+                                                    oninput="filterOppDropdown('${p.id}', this.value)"
+                                                    onfocus="filterOppDropdown('${p.id}', this.value)"
+                                                    onblur="setTimeout(() => hideOppDropdown('${p.id}'), 200)"
+                                                    autocomplete="off"
+                                                    class="w-full text-xs border border-dashed border-gray-300 rounded px-2 py-1 text-gray-600 placeholder-gray-300 hover:border-pink-400 focus:outline-none focus:border-pink-400 bg-transparent" />
+                                                <div id="opp-dropdown-${p.id}" class="hidden absolute z-20 left-0 right-0 bg-white border border-gray-200 rounded shadow-lg max-h-48 overflow-y-auto mt-0.5"></div>
+                                            </div>` : (linkedOpps.length === 0 ? '<span class="text-xs text-gray-300">—</span>' : '')}
                                     </div>`;
 
                                 return `<tr class="border-b border-gray-100 hover:bg-gray-50 ${idx % 2 === 0 ? '' : 'bg-gray-50/40'}">
-                                    <td class="py-4 px-4 text-sm font-bold text-gray-900 align-top">${f['Partner'] || ''}</td>
-                                    <td class="py-4 px-4 text-sm text-gray-600 align-top">${f['Segment / Category'] || ''}</td>
-                                    <td class="py-4 px-4 text-sm text-gray-700 align-top leading-relaxed">${f['Co-Sell Motion'] || ''}</td>
-                                    <td class="py-4 px-4 text-sm text-gray-600 align-top">${f['Target Contacts'] || ''}</td>
-                                    <td class="py-4 px-4 text-sm text-gray-700 align-top">
+                                    <td class="py-4 px-4 text-sm font-bold text-gray-900 align-top">${(f['Partner'] || '').replace(/</g,'&lt;')}</td>
+                                    <td class="py-4 px-4 text-sm text-gray-600 align-top">${(f['Segment / Category'] || '').replace(/</g,'&lt;')}</td>
+                                    <td class="py-4 px-4 text-sm text-gray-700 align-top leading-relaxed">${(f['Co-Sell Motion'] || '').replace(/</g,'&lt;')}</td>
+                                    <td class="py-4 px-4 text-sm text-gray-600 align-top">${(f['Target Contacts'] || '').replace(/</g,'&lt;')}</td>
+                                    <td class="py-4 px-4 align-top">
                                         ${canWrite
-                                            ? `<div contenteditable="true" data-record-id="${p.id}"
-                                                onblur="updateCoSellingRecord(this.dataset.recordId, {'Status': this.innerText.trim()})"
-                                                class="min-h-[1.5rem] rounded px-1 -mx-1 hover:bg-yellow-50 focus:bg-yellow-50 focus:outline focus:outline-2 focus:outline-yellow-300 cursor-text"
-                                                >${f['Status'] || ''}</div>`
-                                            : `<span>${f['Status'] || ''}</span>`}
+                                            ? `<select onchange="updateCoSellingRecord('${p.id}', {'Status': this.value})"
+                                                class="w-full text-xs border border-gray-200 rounded px-2 py-1.5 text-gray-700 focus:outline-none focus:border-pink-400 bg-white cursor-pointer">
+                                                ${statusOptions.map(s => `<option value="${s}" ${(f['Status'] || '') === s ? 'selected' : ''}>${s}</option>`).join('')}
+                                            </select>`
+                                            : `<span class="text-sm text-gray-700">${f['Status'] || ''}</span>`}
                                     </td>
                                     <td class="py-4 px-4 align-top">${oppsCell}</td>
+                                    <td class="py-4 px-4 align-top text-right">
+                                        ${acvTotal > 0 ? `<span class="text-sm font-semibold text-green-700">$${acvTotal.toLocaleString()}</span>` : '<span class="text-xs text-gray-300">—</span>'}
+                                    </td>
                                     <td class="py-4 px-4 align-top text-center">
                                         <span class="inline-block px-2 py-0.5 rounded-full text-xs font-bold border ${pc}">${pri}</span>
                                     </td>
@@ -2234,8 +2285,8 @@
                     <div class="px-4 py-3 bg-gray-50 border-t border-gray-100 text-xs text-gray-400">
                         Priority key: <span class="text-red-500 font-semibold">High</span> — Pursue within Q2 &nbsp;·&nbsp;
                         <span class="text-yellow-500 font-semibold">Medium</span> — Develop in Q3 &nbsp;·&nbsp;
-                        <span class="text-green-500 font-semibold">Low</span> — Long-cycle, C-suite alignment required
-                        ${canWrite ? '&nbsp;·&nbsp; <span class="text-blue-400">Click Status to edit · Use dropdown to link opps · Hover linked opp to unlink</span>' : ''}
+                        <span class="text-blue-500 font-semibold">Low</span> — Long-cycle, C-suite alignment required
+                        ${canWrite ? '&nbsp;·&nbsp; <span class="text-blue-400">Use Status dropdown to update · Type to search &amp; link opps · Hover linked opp to unlink</span>' : ''}
                     </div>
                 </div>
             </div>`;
