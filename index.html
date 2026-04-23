@@ -950,6 +950,9 @@
                 const monthStart = new Date(years[i], i + 1, 1);
                 const monthEnd = new Date(years[i], i + 2, 0);
 
+                // Stop at the current month — don't show future months
+                if (monthStart > currentDate) break;
+
                 const monthOpps = displayOpps.filter(opp => {
                     const engagementDate = opp.fields['SEAL Engagement Date'] ? new Date(opp.fields['SEAL Engagement Date']) : null;
                     return engagementDate && engagementDate >= monthStart && engagementDate <= monthEnd;
