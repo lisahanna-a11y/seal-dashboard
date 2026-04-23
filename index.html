@@ -207,6 +207,8 @@
             showMonthlyOpps: false,
             coSellingPartners: [],
             coSellingFilter: 'all',
+            rawOpportunities: [],
+            showAddPartnerModal: false,
             metrics: getSampleData(),
             activeView: 'dashboard',
             kanbanCards: [],
@@ -1304,6 +1306,7 @@
                     fetchAirtableTable('tblDTq7TTP42GzdPF', 'CoSelling', pat)
                 ]);
                 if (coSellingRecords.length > 0) state.coSellingPartners = coSellingRecords;
+                if (opportunities.length > 0) state.rawOpportunities = opportunities;
 
                 // Update kanban cards from Airtable
                 if (kanbanRecords.length > 0) {
@@ -2045,6 +2048,94 @@
             } catch (e) { console.error('Co-selling update error:', e); }
         }
 
+        async function linkOppToPartner(partnerId, oppId) {
+            const pat = localStorage.getItem('airtable_pat');
+            if (!pat) return;
+            const partner = state.coSellingPartners.find(p => p.id === partnerId);
+            if (!partner) return;
+            const existing = (partner.fields['Linked Opportunities'] || []).map(r => ({ id: r.id || r }));
+            if (existing.find(r => r.id === oppId)) return;
+            const updated = [...existing, { id: oppId }];
+            await updateCoSellingRecord(partnerId, { 'Linked Opportunities': updated });
+            // Update local state immediately
+            partner.fields['Linked Opportunities'] = updated;
+            render();
+        }
+
+        async function unlinkOppFromPartner(partnerId, oppId) {
+            const pat = localStorage.getItem('airtable_pat');
+            if (!pat) return;
+            const partner = state.coSellingPartners.find(p => p.id === partnerId);
+            if (!partner) return;
+            const updated = (partner.fields['Linked Opportunities'] || [])
+                .map(r => ({ id: r.id || r }))
+                .filter(r => r.id !== oppId);
+            await updateCoSellingRecord(partnerId, { 'Linked Opportunities': updated });
+            partner.fields['Linked Opportunities'] = updated;
+            render();
+        }
+
+        async function addCoSellingPartner(fields) {
+            const pat = localStorage.getItem('airtable_pat');
+            if (!pat) return;
+            try {
+                const res = await fetch(`https://api.airtable.com/v0/${AIRTABLE_BASE_ID}/tblDTq7TTP42GzdPF`, {
+                    method: 'POST',
+                    headers: { 'Authorization': `Bearer ${pat}`, 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ fields })
+                });
+                const record = await res.json();
+                state.coSellingPartners.push(record);
+                state.showAddPartnerModal = false;
+                render();
+            } catch (e) { console.error('Add partner error:', e); }
+        }
+
+        function renderAddPartnerModal() {
+            return `<div class="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4" onclick="if(event.target===this){state.showAddPartnerModal=false;render();}">
+                <div class="bg-white rounded-2xl shadow-2xl w-full max-w-lg p-6" onclick="event.stopPropagation()">
+                    <h2 class="text-lg font-bold text-gray-900 mb-4">Add Co-Selling Partner</h2>
+                    <div class="space-y-3">
+                        <div><label class="text-xs font-semibold text-gray-500 uppercase tracking-wide">Partner *</label>
+                            <input id="cs-partner" class="mt-1 w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-pink-400" placeholder="e.g. Aon"></div>
+                        <div><label class="text-xs font-semibold text-gray-500 uppercase tracking-wide">Segment / Category</label>
+                            <input id="cs-segment" class="mt-1 w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-pink-400" placeholder="e.g. HR Consulting / Benefits"></div>
+                        <div><label class="text-xs font-semibold text-gray-500 uppercase tracking-wide">Co-Sell Motion</label>
+                            <textarea id="cs-motion" rows="2" class="mt-1 w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-pink-400" placeholder="Describe the co-sell motion..."></textarea></div>
+                        <div><label class="text-xs font-semibold text-gray-500 uppercase tracking-wide">Target Contacts</label>
+                            <input id="cs-contacts" class="mt-1 w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-pink-400" placeholder="e.g. CHRO, Head of Partnerships"></div>
+                        <div><label class="text-xs font-semibold text-gray-500 uppercase tracking-wide">Status</label>
+                            <input id="cs-status" class="mt-1 w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-pink-400" placeholder="Current status..."></div>
+                        <div><label class="text-xs font-semibold text-gray-500 uppercase tracking-wide">Owner</label>
+                            <input id="cs-owner" class="mt-1 w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-pink-400" placeholder="e.g. Chad, Jesus"></div>
+                        <div><label class="text-xs font-semibold text-gray-500 uppercase tracking-wide">Priority</label>
+                            <select id="cs-priority" class="mt-1 w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-pink-400">
+                                <option value="">Select...</option>
+                                <option value="High">High — Pursue within Q2</option>
+                                <option value="Medium">Medium — Develop in Q3</option>
+                                <option value="Low">Low — Long-cycle</option>
+                            </select></div>
+                    </div>
+                    <div class="flex gap-3 mt-5">
+                        <button onclick="state.showAddPartnerModal=false;render();" class="flex-1 py-2 rounded-lg border border-gray-300 text-sm font-medium text-gray-600 hover:bg-gray-50">Cancel</button>
+                        <button onclick="
+                            const f = {};
+                            const p = document.getElementById('cs-partner').value.trim();
+                            if (!p) { alert('Partner name is required'); return; }
+                            f['Partner'] = p;
+                            const seg = document.getElementById('cs-segment').value.trim(); if (seg) f['Segment / Category'] = seg;
+                            const mot = document.getElementById('cs-motion').value.trim(); if (mot) f['Co-Sell Motion'] = mot;
+                            const con = document.getElementById('cs-contacts').value.trim(); if (con) f['Target Contacts'] = con;
+                            const sta = document.getElementById('cs-status').value.trim(); if (sta) f['Status'] = sta;
+                            const own = document.getElementById('cs-owner').value.trim(); if (own) f['Owner'] = own;
+                            const pri = document.getElementById('cs-priority').value; if (pri) f['Priority'] = pri;
+                            addCoSellingPartner(f);"
+                            class="flex-1 py-2 rounded-lg bg-pink-600 text-white text-sm font-semibold hover:bg-pink-700">Add Partner</button>
+                    </div>
+                </div>
+            </div>`;
+        }
+
         function renderCoSellingView() {
             const partners = state.coSellingPartners;
             const filter = state.coSellingFilter;
@@ -2054,37 +2145,71 @@
                 class="px-4 py-1.5 rounded-full text-sm font-medium border transition-colors ${filter === val ? 'bg-slate-800 text-white border-slate-800' : 'bg-white text-gray-600 border-gray-300 hover:border-slate-400'}">${label}</button>`;
             const canWrite = !!localStorage.getItem('airtable_pat');
 
-            return `<div class="max-w-7xl mx-auto px-8 py-8">
+            // Build opp lookup map from raw opportunities
+            const oppMap = {};
+            (state.rawOpportunities || []).forEach(o => { oppMap[o.id] = o.fields; });
+
+            // Opp dropdown options for linking
+            const oppOptions = (state.rawOpportunities || [])
+                .filter(o => o.fields['Account Name'] || o.fields['Opportunity Name'])
+                .map(o => `<option value="${o.id}">${o.fields['Account Name'] || ''} — ${(o.fields['Opportunity Name'] || '').substring(0, 50)}</option>`)
+                .join('');
+
+            const modal = state.showAddPartnerModal ? renderAddPartnerModal() : '';
+
+            return modal + `<div class="max-w-7xl mx-auto px-8 py-8">
                 <div class="flex items-start justify-between mb-6">
                     <div>
                         <h1 class="text-2xl font-bold text-white mb-1">PAC Co-Selling Matrix</h1>
                         <p class="text-slate-400 text-sm">Active co-selling opportunities with strategic partners</p>
                     </div>
-                    <div class="flex gap-2">
+                    <div class="flex items-center gap-2 flex-wrap justify-end">
                         ${filterBtn('all', 'All')}
                         ${filterBtn('High', '🔴 High')}
                         ${filterBtn('Medium', '🟡 Medium')}
                         ${filterBtn('Low', '🟢 Low')}
+                        ${canWrite ? `<button onclick="state.showAddPartnerModal=true; render();"
+                            class="ml-2 px-4 py-1.5 rounded-full text-sm font-semibold bg-pink-600 text-white hover:bg-pink-700 transition-colors">+ Add Partner</button>` : ''}
                     </div>
                 </div>
                 <div class="bg-white rounded-xl shadow-lg overflow-hidden">
                     <table class="w-full">
                         <thead>
                             <tr class="bg-slate-800 text-white">
-                                <th class="text-left py-3 px-4 text-sm font-semibold w-40">Partner</th>
-                                <th class="text-left py-3 px-4 text-sm font-semibold w-40">Segment / Category</th>
+                                <th class="text-left py-3 px-4 text-sm font-semibold w-36">Partner</th>
+                                <th class="text-left py-3 px-4 text-sm font-semibold w-36">Segment / Category</th>
                                 <th class="text-left py-3 px-4 text-sm font-semibold">Co-Sell Motion</th>
-                                <th class="text-left py-3 px-4 text-sm font-semibold w-44">Target Contacts</th>
-                                <th class="text-left py-3 px-4 text-sm font-semibold w-56">Status</th>
+                                <th class="text-left py-3 px-4 text-sm font-semibold w-40">Target Contacts</th>
+                                <th class="text-left py-3 px-4 text-sm font-semibold w-48">Status</th>
+                                <th class="text-left py-3 px-4 text-sm font-semibold w-48">Linked Opps</th>
                                 <th class="text-center py-3 px-4 text-sm font-semibold w-24">Priority</th>
                             </tr>
                         </thead>
                         <tbody>
-                            ${filtered.length === 0 ? `<tr><td colspan="6" class="py-12 text-center text-gray-400">No partners found</td></tr>` :
+                            ${filtered.length === 0 ? `<tr><td colspan="7" class="py-12 text-center text-gray-400">No partners found</td></tr>` :
                             filtered.map((p, idx) => {
                                 const f = p.fields;
                                 const pri = f['Priority'] || '';
                                 const pc = priorityColor[pri] || 'text-gray-600 bg-gray-50 border-gray-200';
+                                const linkedIds = (f['Linked Opportunities'] || []).map(r => r.id || r);
+                                const linkedOpps = linkedIds.map(id => oppMap[id]).filter(Boolean);
+
+                                const oppsCell = `
+                                    <div class="space-y-1">
+                                        ${linkedOpps.map(o => `
+                                            <div class="flex items-center gap-1 group">
+                                                <span class="text-xs text-gray-700 font-medium">${o['Account Name'] || 'Unknown'}</span>
+                                                <span class="text-xs text-gray-400">${o['1st Year ACV (converted)'] ? '· $' + Number(o['1st Year ACV (converted)']).toLocaleString() : ''}</span>
+                                                ${canWrite ? `<button onclick="unlinkOppFromPartner('${p.id}', '${linkedIds[linkedOpps.indexOf(o)]}')"
+                                                    class="opacity-0 group-hover:opacity-100 ml-1 text-gray-300 hover:text-red-400 text-xs leading-none transition-opacity" title="Unlink">✕</button>` : ''}
+                                            </div>`).join('')}
+                                        ${canWrite ? `<select onchange="if(this.value){linkOppToPartner('${p.id}', this.value); this.value='';}"
+                                            class="mt-1 w-full text-xs border border-dashed border-gray-300 rounded px-1 py-0.5 text-gray-400 hover:border-pink-400 focus:outline-none focus:border-pink-400 cursor-pointer bg-transparent">
+                                            <option value="">+ Link opp...</option>
+                                            ${oppOptions}
+                                        </select>` : (linkedOpps.length === 0 ? '<span class="text-xs text-gray-300">—</span>' : '')}
+                                    </div>`;
+
                                 return `<tr class="border-b border-gray-100 hover:bg-gray-50 ${idx % 2 === 0 ? '' : 'bg-gray-50/40'}">
                                     <td class="py-4 px-4 text-sm font-bold text-gray-900 align-top">${f['Partner'] || ''}</td>
                                     <td class="py-4 px-4 text-sm text-gray-600 align-top">${f['Segment / Category'] || ''}</td>
@@ -2092,13 +2217,13 @@
                                     <td class="py-4 px-4 text-sm text-gray-600 align-top">${f['Target Contacts'] || ''}</td>
                                     <td class="py-4 px-4 text-sm text-gray-700 align-top">
                                         ${canWrite
-                                            ? `<div contenteditable="true" data-record-id="${p.id}" data-field="Status"
+                                            ? `<div contenteditable="true" data-record-id="${p.id}"
                                                 onblur="updateCoSellingRecord(this.dataset.recordId, {'Status': this.innerText.trim()})"
                                                 class="min-h-[1.5rem] rounded px-1 -mx-1 hover:bg-yellow-50 focus:bg-yellow-50 focus:outline focus:outline-2 focus:outline-yellow-300 cursor-text"
                                                 >${f['Status'] || ''}</div>`
-                                            : `<span>${f['Status'] || ''}</span>`
-                                        }
+                                            : `<span>${f['Status'] || ''}</span>`}
                                     </td>
+                                    <td class="py-4 px-4 align-top">${oppsCell}</td>
                                     <td class="py-4 px-4 align-top text-center">
                                         <span class="inline-block px-2 py-0.5 rounded-full text-xs font-bold border ${pc}">${pri}</span>
                                     </td>
@@ -2110,7 +2235,7 @@
                         Priority key: <span class="text-red-500 font-semibold">High</span> — Pursue within Q2 &nbsp;·&nbsp;
                         <span class="text-yellow-500 font-semibold">Medium</span> — Develop in Q3 &nbsp;·&nbsp;
                         <span class="text-green-500 font-semibold">Low</span> — Long-cycle, C-suite alignment required
-                        ${canWrite ? '&nbsp;·&nbsp; <span class="text-blue-400">Click Status cells to edit</span>' : ''}
+                        ${canWrite ? '&nbsp;·&nbsp; <span class="text-blue-400">Click Status to edit · Use dropdown to link opps · Hover linked opp to unlink</span>' : ''}
                     </div>
                 </div>
             </div>`;
@@ -2641,11 +2766,11 @@
                                 <button onclick="switchView('kanban')" class="px-6 py-3 text-sm font-semibold rounded-t-lg transition-colors ${state.activeView === 'kanban' ? 'bg-white text-slate-900' : 'text-slate-400 hover:text-white hover:bg-slate-800'}">
                                     FY '27 PAC Team Priorities
                                 </button>
-                                <button onclick="switchView('wishlist')" class="px-6 py-3 text-sm font-semibold rounded-t-lg transition-colors ${state.activeView === 'wishlist' ? 'bg-white text-slate-900' : 'text-slate-400 hover:text-white hover:bg-slate-800'}">
-                                    ✨ Alexi's Wishlist
-                                </button>
                                 <button onclick="switchView('coselling')" class="px-6 py-3 text-sm font-semibold rounded-t-lg transition-colors ${state.activeView === 'coselling' ? 'bg-white text-slate-900' : 'text-slate-400 hover:text-white hover:bg-slate-800'}">
                                     PAC Co-Selling Matrix
+                                </button>
+                                <button onclick="switchView('wishlist')" class="px-6 py-3 text-sm font-semibold rounded-t-lg transition-colors ${state.activeView === 'wishlist' ? 'bg-white text-slate-900' : 'text-slate-400 hover:text-white hover:bg-slate-800'}">
+                                    ✨ Alexi's Wishlist
                                 </button>
                             </div>
                         </div>
