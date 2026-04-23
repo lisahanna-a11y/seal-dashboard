@@ -205,6 +205,8 @@
                 chroImpact: true
             },
             showMonthlyOpps: false,
+            coSellingPartners: [],
+            coSellingFilter: 'all',
             metrics: getSampleData(),
             activeView: 'dashboard',
             kanbanCards: [],
@@ -1290,7 +1292,7 @@
                 await fetchConfigFromAirtable(pat);
 
                 // Fetch all tables, marketing data, and kanban cards in parallel
-                const [opportunities, requests, engagements, seals, otherActivities, marketingData, kanbanRecords, oppGridRecords] = await Promise.all([
+                const [opportunities, requests, engagements, seals, otherActivities, marketingData, kanbanRecords, oppGridRecords, coSellingRecords] = await Promise.all([
                     fetchAirtableTable('tblqtDoaoBNBvkEGC', 'Opportunities', pat, 'All influenced Opps'),
                     fetchAirtableTable('tblgl22l1BJZEHuEG', 'Requests', pat),
                     fetchAirtableTable('tblqDX9oFP6kbkCyG', 'Engagements', pat),
@@ -1298,8 +1300,10 @@
                     fetchAirtableTable('tblh2XURhlIZO5MnY', 'OtherActivities', pat),
                     fetchMarketingData(),
                     fetchAirtableTable(KANBAN_TABLE_ID, 'PAC Kanban', pat),
-                    fetchAirtableTable('tblMKnSY6RV3Puvvn', 'Opportunity Grid', pat)
+                    fetchAirtableTable('tblMKnSY6RV3Puvvn', 'Opportunity Grid', pat),
+                    fetchAirtableTable('tblDTq7TTP42GzdPF', 'CoSelling', pat)
                 ]);
+                if (coSellingRecords.length > 0) state.coSellingPartners = coSellingRecords;
 
                 // Update kanban cards from Airtable
                 if (kanbanRecords.length > 0) {
@@ -2027,6 +2031,91 @@
             } catch (e) { console.error('Delete attachment error:', e); }
         }
 
+        // ── Co-Selling Matrix functions ────────────────────────────────────────
+
+        async function updateCoSellingRecord(recordId, fields) {
+            const pat = localStorage.getItem('airtable_pat');
+            if (!pat) return;
+            try {
+                await fetch(`https://api.airtable.com/v0/${AIRTABLE_BASE_ID}/tblDTq7TTP42GzdPF/${recordId}`, {
+                    method: 'PATCH',
+                    headers: { 'Authorization': `Bearer ${pat}`, 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ fields })
+                });
+            } catch (e) { console.error('Co-selling update error:', e); }
+        }
+
+        function renderCoSellingView() {
+            const partners = state.coSellingPartners;
+            const filter = state.coSellingFilter;
+            const filtered = filter === 'all' ? partners : partners.filter(p => p.fields['Priority'] === filter);
+            const priorityColor = { High: 'text-red-600 bg-red-50 border-red-200', Medium: 'text-yellow-600 bg-yellow-50 border-yellow-200', Low: 'text-green-600 bg-green-50 border-green-200' };
+            const filterBtn = (val, label) => `<button onclick="state.coSellingFilter='${val}'; render();"
+                class="px-4 py-1.5 rounded-full text-sm font-medium border transition-colors ${filter === val ? 'bg-slate-800 text-white border-slate-800' : 'bg-white text-gray-600 border-gray-300 hover:border-slate-400'}">${label}</button>`;
+            const canWrite = !!localStorage.getItem('airtable_pat');
+
+            return `<div class="max-w-7xl mx-auto px-8 py-8">
+                <div class="flex items-start justify-between mb-6">
+                    <div>
+                        <h1 class="text-2xl font-bold text-white mb-1">PAC Co-Selling Matrix</h1>
+                        <p class="text-slate-400 text-sm">Active co-selling opportunities with strategic partners</p>
+                    </div>
+                    <div class="flex gap-2">
+                        ${filterBtn('all', 'All')}
+                        ${filterBtn('High', '🔴 High')}
+                        ${filterBtn('Medium', '🟡 Medium')}
+                        ${filterBtn('Low', '🟢 Low')}
+                    </div>
+                </div>
+                <div class="bg-white rounded-xl shadow-lg overflow-hidden">
+                    <table class="w-full">
+                        <thead>
+                            <tr class="bg-slate-800 text-white">
+                                <th class="text-left py-3 px-4 text-sm font-semibold w-40">Partner</th>
+                                <th class="text-left py-3 px-4 text-sm font-semibold w-40">Segment / Category</th>
+                                <th class="text-left py-3 px-4 text-sm font-semibold">Co-Sell Motion</th>
+                                <th class="text-left py-3 px-4 text-sm font-semibold w-44">Target Contacts</th>
+                                <th class="text-left py-3 px-4 text-sm font-semibold w-56">Status</th>
+                                <th class="text-center py-3 px-4 text-sm font-semibold w-24">Priority</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${filtered.length === 0 ? `<tr><td colspan="6" class="py-12 text-center text-gray-400">No partners found</td></tr>` :
+                            filtered.map((p, idx) => {
+                                const f = p.fields;
+                                const pri = f['Priority'] || '';
+                                const pc = priorityColor[pri] || 'text-gray-600 bg-gray-50 border-gray-200';
+                                return `<tr class="border-b border-gray-100 hover:bg-gray-50 ${idx % 2 === 0 ? '' : 'bg-gray-50/40'}">
+                                    <td class="py-4 px-4 text-sm font-bold text-gray-900 align-top">${f['Partner'] || ''}</td>
+                                    <td class="py-4 px-4 text-sm text-gray-600 align-top">${f['Segment / Category'] || ''}</td>
+                                    <td class="py-4 px-4 text-sm text-gray-700 align-top leading-relaxed">${f['Co-Sell Motion'] || ''}</td>
+                                    <td class="py-4 px-4 text-sm text-gray-600 align-top">${f['Target Contacts'] || ''}</td>
+                                    <td class="py-4 px-4 text-sm text-gray-700 align-top">
+                                        ${canWrite
+                                            ? `<div contenteditable="true" data-record-id="${p.id}" data-field="Status"
+                                                onblur="updateCoSellingRecord(this.dataset.recordId, {'Status': this.innerText.trim()})"
+                                                class="min-h-[1.5rem] rounded px-1 -mx-1 hover:bg-yellow-50 focus:bg-yellow-50 focus:outline focus:outline-2 focus:outline-yellow-300 cursor-text"
+                                                >${f['Status'] || ''}</div>`
+                                            : `<span>${f['Status'] || ''}</span>`
+                                        }
+                                    </td>
+                                    <td class="py-4 px-4 align-top text-center">
+                                        <span class="inline-block px-2 py-0.5 rounded-full text-xs font-bold border ${pc}">${pri}</span>
+                                    </td>
+                                </tr>`;
+                            }).join('')}
+                        </tbody>
+                    </table>
+                    <div class="px-4 py-3 bg-gray-50 border-t border-gray-100 text-xs text-gray-400">
+                        Priority key: <span class="text-red-500 font-semibold">High</span> — Pursue within Q2 &nbsp;·&nbsp;
+                        <span class="text-yellow-500 font-semibold">Medium</span> — Develop in Q3 &nbsp;·&nbsp;
+                        <span class="text-green-500 font-semibold">Low</span> — Long-cycle, C-suite alignment required
+                        ${canWrite ? '&nbsp;·&nbsp; <span class="text-blue-400">Click Status cells to edit</span>' : ''}
+                    </div>
+                </div>
+            </div>`;
+        }
+
         // ── Wishlist functions ─────────────────────────────────────────────────
 
         function loadWishlistItems() {
@@ -2555,6 +2644,9 @@
                                 <button onclick="switchView('wishlist')" class="px-6 py-3 text-sm font-semibold rounded-t-lg transition-colors ${state.activeView === 'wishlist' ? 'bg-white text-slate-900' : 'text-slate-400 hover:text-white hover:bg-slate-800'}">
                                     ✨ Alexi's Wishlist
                                 </button>
+                                <button onclick="switchView('coselling')" class="px-6 py-3 text-sm font-semibold rounded-t-lg transition-colors ${state.activeView === 'coselling' ? 'bg-white text-slate-900' : 'text-slate-400 hover:text-white hover:bg-slate-800'}">
+                                    PAC Co-Selling Matrix
+                                </button>
                             </div>
                         </div>
                     </div>`;
@@ -2570,6 +2662,14 @@
                 // Wishlist view early return
                 if (state.activeView === 'wishlist') {
                     document.getElementById('app').innerHTML = tabBar + renderWishlistView();
+                    return;
+                }
+
+                // Co-Selling Matrix view early return
+                if (state.activeView === 'coselling') {
+                    document.getElementById('app').innerHTML = tabBar +
+                        '<div class="bg-gradient-to-br from-slate-900 to-slate-800 min-h-screen">' +
+                        renderCoSellingView() + '</div>';
                     return;
                 }
 
