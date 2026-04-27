@@ -2491,10 +2491,8 @@
                         ${filterBtn('High', '🔴 High')}
                         ${filterBtn('Medium', '🟡 Medium')}
                         ${filterBtn('Low', '🔵 Low')}
-                        <button onclick="state.impactReport.open=true; state.impactReport.generated=false; render();"
-                            class="ml-2 px-4 py-1.5 rounded-full text-sm font-semibold border border-white/30 text-white hover:bg-white/10 transition-colors">⚡ Impact Report</button>
                         ${canWrite ? `<button onclick="state.showAddPartnerModal=true; render();"
-                            class="ml-1 px-4 py-1.5 rounded-full text-sm font-semibold bg-pink-600 text-white hover:bg-pink-700 transition-colors">+ Add Partner</button>` : ''}
+                            class="ml-2 px-4 py-1.5 rounded-full text-sm font-semibold bg-pink-600 text-white hover:bg-pink-700 transition-colors">+ Add Partner</button>` : ''}
                     </div>
                 </div>
                 <div class="grid grid-cols-3 gap-4 mb-6">
@@ -3244,7 +3242,7 @@
                     </div>
                 </div>`;
 
-            document.getElementById('app').innerHTML = tabBar + sectionNav + `
+            document.getElementById('app').innerHTML = renderImpactReport() + tabBar + sectionNav + `
                 <div class="max-w-7xl mx-auto p-8">
                     <!-- Header -->
                     <div class="mb-8">
@@ -3357,6 +3355,11 @@
                                         Last updated: ${lastUpdated.toLocaleString()}
                                     </span>
                                 ` : ''}
+
+                                <button onclick="state.impactReport.open=true; state.impactReport.generated=false; render();"
+                                    class="ml-auto px-4 py-2 rounded-lg text-sm font-semibold border border-white/20 text-white hover:bg-white/10 transition-colors">
+                                    ⚡ Impact Report
+                                </button>
                             </div>
                         </div>
                     </div>
