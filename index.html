@@ -49,6 +49,8 @@
         const KANBAN_TABLE_ID = 'tbl6nXjgtxK9VdKjE';
         const KANBAN_ATTACHMENTS_FIELD_ID = 'fldUHlNTP7VmK4Fui';
         const WISHLIST_TABLE_ID = 'tblJlWmuiVqcG4DJj';
+        const AT_CONTACTS_TABLE_ID = 'tblS788zfduxzLGCc';
+        const CS_LINKED_CONTACTS_FIELD = 'fldTMTMtA4DKLjrV3';
 
         const DEFAULT_SETTINGS = {
             totalPipelineTarget: 75000000,
@@ -208,6 +210,7 @@
             coSellingPartners: [],
             coSellingFilter: 'all',
             rawOpportunities: [],
+            rawContacts: [],
             showAddPartnerModal: false,
             metrics: getSampleData(),
             activeView: 'dashboard',
@@ -1294,7 +1297,7 @@
                 await fetchConfigFromAirtable(pat);
 
                 // Fetch all tables, marketing data, and kanban cards in parallel
-                const [opportunities, requests, engagements, seals, otherActivities, marketingData, kanbanRecords, oppGridRecords, coSellingRecords] = await Promise.all([
+                const [opportunities, requests, engagements, seals, otherActivities, marketingData, kanbanRecords, oppGridRecords, coSellingRecords, contactRecords] = await Promise.all([
                     fetchAirtableTable('tblqtDoaoBNBvkEGC', 'Opportunities', pat, 'All influenced Opps'),
                     fetchAirtableTable('tblgl22l1BJZEHuEG', 'Requests', pat),
                     fetchAirtableTable('tblqDX9oFP6kbkCyG', 'Engagements', pat),
@@ -1303,10 +1306,12 @@
                     fetchMarketingData(),
                     fetchAirtableTable(KANBAN_TABLE_ID, 'PAC Kanban', pat),
                     fetchAirtableTable('tblMKnSY6RV3Puvvn', 'Opportunity Grid', pat),
-                    fetchAirtableTable('tblDTq7TTP42GzdPF', 'CoSelling', pat)
+                    fetchAirtableTable('tblDTq7TTP42GzdPF', 'CoSelling', pat),
+                    fetchAirtableTable(AT_CONTACTS_TABLE_ID, 'AT Contacts Report', pat)
                 ]);
                 if (coSellingRecords.length > 0) state.coSellingPartners = coSellingRecords;
                 if (opportunities.length > 0) state.rawOpportunities = opportunities;
+                if (contactRecords.length > 0) state.rawContacts = contactRecords;
 
                 // Update kanban cards from Airtable
                 if (kanbanRecords.length > 0) {
@@ -2074,6 +2079,76 @@
             render();
         }
 
+        function getLinkedContactIds(partner) {
+            const raw = partner.fields['Linked Contact IDs'] || '';
+            try { return JSON.parse(raw); } catch { return []; }
+        }
+
+        async function linkContactToPartner(partnerId, contactId) {
+            const pat = localStorage.getItem('airtable_pat');
+            if (!pat) return;
+            const partner = state.coSellingPartners.find(p => p.id === partnerId);
+            if (!partner) return;
+            const existing = getLinkedContactIds(partner);
+            if (existing.includes(contactId)) return;
+            const updated = [...existing, contactId];
+            const serialized = JSON.stringify(updated);
+            await updateCoSellingRecord(partnerId, { 'Linked Contact IDs': serialized });
+            partner.fields['Linked Contact IDs'] = serialized;
+            render();
+        }
+
+        async function unlinkContactFromPartner(partnerId, contactId) {
+            const pat = localStorage.getItem('airtable_pat');
+            if (!pat) return;
+            const partner = state.coSellingPartners.find(p => p.id === partnerId);
+            if (!partner) return;
+            const updated = getLinkedContactIds(partner).filter(id => id !== contactId);
+            const serialized = JSON.stringify(updated);
+            await updateCoSellingRecord(partnerId, { 'Linked Contact IDs': serialized });
+            partner.fields['Linked Contact IDs'] = serialized;
+            render();
+        }
+
+        function filterContactDropdown(partnerId, query) {
+            const dropdown = document.getElementById('contact-dropdown-' + partnerId);
+            if (!dropdown) return;
+            if (!query.trim()) { dropdown.classList.add('hidden'); return; }
+            const q = query.toLowerCase();
+            const linkedIds = getLinkedContactIds(state.coSellingPartners.find(p => p.id === partnerId) || { fields: {} });
+            const matches = (state.rawContacts || [])
+                .filter(c => {
+                    const name = ((c.fields['Full Name'] || '') + ' ' + (c.fields['Account Name'] || '') + ' ' + (c.fields['Title'] || '')).toLowerCase();
+                    return name.includes(q) && !linkedIds.includes(c.id);
+                })
+                .slice(0, 20);
+            if (matches.length === 0) {
+                dropdown.innerHTML = '<div class="px-3 py-2 text-xs text-gray-400 italic">No matches</div>';
+                dropdown.classList.remove('hidden');
+                return;
+            }
+            dropdown.innerHTML = matches.map(c => `
+                <div onclick="selectContactForPartner('${partnerId}', '${c.id}')"
+                    class="px-3 py-2 text-xs hover:bg-pink-50 cursor-pointer border-b border-gray-50 last:border-0">
+                    <span class="font-medium text-gray-800">${(c.fields['Full Name'] || 'Unknown').replace(/</g,'&lt;')}</span>
+                    ${c.fields['Title'] ? `<span class="text-gray-400 ml-1">· ${c.fields['Title'].replace(/</g,'&lt;')}</span>` : ''}
+                    ${c.fields['Account Name'] ? `<div class="text-gray-400 mt-0.5">${c.fields['Account Name'].replace(/</g,'&lt;')}</div>` : ''}
+                </div>`).join('');
+            dropdown.classList.remove('hidden');
+        }
+
+        function hideContactDropdown(partnerId) {
+            const el = document.getElementById('contact-dropdown-' + partnerId);
+            if (el) el.classList.add('hidden');
+        }
+
+        function selectContactForPartner(partnerId, contactId) {
+            const input = document.getElementById('contact-input-' + partnerId);
+            if (input) input.value = '';
+            hideContactDropdown(partnerId);
+            linkContactToPartner(partnerId, contactId);
+        }
+
         async function addCoSellingPartner(fields) {
             const pat = localStorage.getItem('airtable_pat');
             if (!pat) return;
@@ -2099,8 +2174,6 @@
                             <input id="cs-partner" class="mt-1 w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-pink-400" placeholder="e.g. Aon"></div>
                         <div><label class="text-xs font-semibold text-gray-500 uppercase tracking-wide">Co-Sell Motion</label>
                             <textarea id="cs-motion" rows="2" class="mt-1 w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-pink-400" placeholder="Describe the co-sell motion..."></textarea></div>
-                        <div><label class="text-xs font-semibold text-gray-500 uppercase tracking-wide">Target Contacts</label>
-                            <input id="cs-contacts" class="mt-1 w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-pink-400" placeholder="e.g. CHRO, Head of Partnerships"></div>
                         <div><label class="text-xs font-semibold text-gray-500 uppercase tracking-wide">Status</label>
                             <input id="cs-status" class="mt-1 w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-pink-400" placeholder="Current status..."></div>
                         <div><label class="text-xs font-semibold text-gray-500 uppercase tracking-wide">Owner</label>
@@ -2121,7 +2194,6 @@
                             if (!p) { alert('Partner name is required'); return; }
                             f['Partner'] = p;
                             const mot = document.getElementById('cs-motion').value.trim(); if (mot) f['Co-Sell Motion'] = mot;
-                            const con = document.getElementById('cs-contacts').value.trim(); if (con) f['Target Contacts'] = con;
                             const sta = document.getElementById('cs-status').value.trim(); if (sta) f['Status'] = sta;
                             const own = document.getElementById('cs-owner').value.trim(); if (own) f['Owner'] = own;
                             const pri = document.getElementById('cs-priority').value; if (pri) f['Priority'] = pri;
@@ -2188,6 +2260,9 @@
             // Build opp lookup map from raw opportunities
             const oppMap = {};
             (state.rawOpportunities || []).forEach(o => { oppMap[o.id] = o.fields; });
+            // Build contact lookup map from AT Contacts Report
+            const contactMap = {};
+            (state.rawContacts || []).forEach(c => { contactMap[c.id] = c.fields; });
 
             const modal = state.showAddPartnerModal ? renderAddPartnerModal() : '';
 
@@ -2212,7 +2287,7 @@
                             <tr class="bg-slate-800 text-white">
                                 <th class="text-left py-3 px-4 text-sm font-semibold w-36">Partner</th>
                                 <th class="text-left py-3 px-4 text-sm font-semibold">Co-Sell Motion</th>
-                                <th class="text-left py-3 px-4 text-sm font-semibold w-36">Target Contacts</th>
+                                <th class="text-left py-3 px-4 text-sm font-semibold w-48">Target Contacts</th>
                                 <th class="text-left py-3 px-4 text-sm font-semibold w-36">Status</th>
                                 <th class="text-left py-3 px-4 text-sm font-semibold w-48">Linked Opps</th>
                                 <th class="text-right py-3 px-4 text-sm font-semibold w-28">ACV Total</th>
@@ -2251,10 +2326,45 @@
                                             </div>` : (linkedOpps.length === 0 ? '<span class="text-xs text-gray-300">—</span>' : '')}
                                     </div>`;
 
+                                const linkedContactIds = getLinkedContactIds(p);
+                                const linkedContacts = linkedContactIds.map(id => contactMap[id]).filter(Boolean);
+
+                                const contactsCell = `
+                                    <div class="space-y-1">
+                                        ${linkedContacts.map((c, i) => {
+                                            const sfId = c['Contact ID - 18 Digit'];
+                                            const sfUrl = sfId ? `https://betterup.lightning.force.com/lightning/r/Contact/${sfId}/view` : null;
+                                            const name = (c['Full Name'] || 'Unknown').replace(/</g,'&lt;');
+                                            const title = (c['Title'] || '').replace(/</g,'&lt;');
+                                            return `<div class="flex items-start gap-1 group">
+                                                <div class="min-w-0">
+                                                    ${sfUrl
+                                                        ? `<a href="${sfUrl}" target="_blank" rel="noopener" class="text-xs font-medium text-blue-600 hover:underline">${name}</a>`
+                                                        : `<span class="text-xs font-medium text-gray-700">${name}</span>`}
+                                                    ${title ? `<div class="text-xs text-gray-400 leading-tight">${title}</div>` : ''}
+                                                </div>
+                                                ${canWrite ? `<button onclick="unlinkContactFromPartner('${p.id}', '${linkedContactIds[i]}')"
+                                                    class="opacity-0 group-hover:opacity-100 flex-shrink-0 text-gray-300 hover:text-red-400 text-xs leading-none mt-0.5 transition-opacity" title="Unlink">✕</button>` : ''}
+                                            </div>`;
+                                        }).join('')}
+                                        ${canWrite ? `
+                                            <div class="relative mt-1">
+                                                <input type="text"
+                                                    id="contact-input-${p.id}"
+                                                    placeholder="Search contacts..."
+                                                    oninput="filterContactDropdown('${p.id}', this.value)"
+                                                    onfocus="filterContactDropdown('${p.id}', this.value)"
+                                                    onblur="setTimeout(() => hideContactDropdown('${p.id}'), 200)"
+                                                    autocomplete="off"
+                                                    class="w-full text-xs border border-dashed border-gray-300 rounded px-2 py-1 text-gray-600 placeholder-gray-300 hover:border-pink-400 focus:outline-none focus:border-pink-400 bg-transparent" />
+                                                <div id="contact-dropdown-${p.id}" class="hidden absolute z-20 left-0 right-0 bg-white border border-gray-200 rounded shadow-lg max-h-48 overflow-y-auto mt-0.5"></div>
+                                            </div>` : (linkedContacts.length === 0 ? '<span class="text-xs text-gray-300">—</span>' : '')}
+                                    </div>`;
+
                                 return `<tr class="border-b border-gray-100 hover:bg-gray-50 ${idx % 2 === 0 ? '' : 'bg-gray-50/40'}">
                                     <td class="py-4 px-4 text-sm font-bold text-gray-900 align-top">${(f['Partner'] || '').replace(/</g,'&lt;')}</td>
                                     <td class="py-4 px-4 text-sm text-gray-700 align-top leading-relaxed">${(f['Co-Sell Motion'] || '').replace(/</g,'&lt;')}</td>
-                                    <td class="py-4 px-4 text-sm text-gray-600 align-top">${(f['Target Contacts'] || '').replace(/</g,'&lt;')}</td>
+                                    <td class="py-4 px-4 align-top">${contactsCell}</td>
                                     <td class="py-4 px-4 text-sm text-gray-700 align-top">
                                         ${canWrite
                                             ? `<div contenteditable="true" data-record-id="${p.id}"
@@ -2278,7 +2388,7 @@
                         Priority key: <span class="text-red-500 font-semibold">High</span> — Pursue within Q2 &nbsp;·&nbsp;
                         <span class="text-yellow-500 font-semibold">Medium</span> — Develop in Q3 &nbsp;·&nbsp;
                         <span class="text-blue-500 font-semibold">Low</span> — Long-cycle, C-suite alignment required
-                        ${canWrite ? '&nbsp;·&nbsp; <span class="text-blue-400">Use Status dropdown to update · Type to search &amp; link opps · Hover linked opp to unlink</span>' : ''}
+                        ${canWrite ? '&nbsp;·&nbsp; <span class="text-blue-400">Edit Status inline · Search to link opps &amp; contacts · Hover to unlink</span>' : ''}
                     </div>
                 </div>
             </div>`;
