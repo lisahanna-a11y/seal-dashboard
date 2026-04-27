@@ -2264,6 +2264,13 @@
             const contactMap = {};
             (state.rawContacts || []).forEach(c => { contactMap[c.id] = c.fields; });
 
+            // Executive summary — computed across ALL partners regardless of filter
+            const allLinkedOppIds = new Set();
+            partners.forEach(p => {
+                (p.fields['Linked Opportunities'] || []).map(r => r.id || r).forEach(id => allLinkedOppIds.add(id));
+            });
+            const totalACV = [...allLinkedOppIds].reduce((sum, id) => sum + (Number((oppMap[id] || {})['1st Year ACV (converted)']) || 0), 0);
+
             const modal = state.showAddPartnerModal ? renderAddPartnerModal() : '';
 
             return modal + `<div class="max-w-7xl mx-auto px-8 py-8">
@@ -2279,6 +2286,20 @@
                         ${filterBtn('Low', '🔵 Low')}
                         ${canWrite ? `<button onclick="state.showAddPartnerModal=true; render();"
                             class="ml-2 px-4 py-1.5 rounded-full text-sm font-semibold bg-pink-600 text-white hover:bg-pink-700 transition-colors">+ Add Partner</button>` : ''}
+                    </div>
+                </div>
+                <div class="grid grid-cols-3 gap-4 mb-6">
+                    <div class="bg-slate-800 rounded-xl px-6 py-5 border border-slate-700">
+                        <p class="text-xs font-semibold uppercase tracking-widest text-slate-400 mb-1">Partners</p>
+                        <p class="text-3xl font-bold text-white">${partners.length}</p>
+                    </div>
+                    <div class="bg-slate-800 rounded-xl px-6 py-5 border border-slate-700">
+                        <p class="text-xs font-semibold uppercase tracking-widest text-slate-400 mb-1">Linked Opportunities</p>
+                        <p class="text-3xl font-bold text-white">${allLinkedOppIds.size}</p>
+                    </div>
+                    <div class="bg-slate-800 rounded-xl px-6 py-5 border border-slate-700">
+                        <p class="text-xs font-semibold uppercase tracking-widest text-slate-400 mb-1">Total ACV</p>
+                        <p class="text-3xl font-bold text-white">${totalACV > 0 ? '$' + (totalACV >= 1000000 ? (totalACV / 1000000).toFixed(1) + 'M' : totalACV >= 1000 ? (totalACV / 1000).toFixed(0) + 'K' : totalACV.toLocaleString()) : '—'}</p>
                     </div>
                 </div>
                 <div class="bg-white rounded-xl shadow-lg overflow-hidden">
