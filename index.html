@@ -211,6 +211,9 @@
             coSellingFilter: 'all',
             rawOpportunities: [],
             rawContacts: [],
+            rawRequests: [],
+            rawSeals: [],
+            impactReport: { open: false, seal: '', range: 'FY27', generated: false },
             showAddPartnerModal: false,
             metrics: getSampleData(),
             activeView: 'dashboard',
@@ -1312,6 +1315,8 @@
                 if (coSellingRecords.length > 0) state.coSellingPartners = coSellingRecords;
                 if (opportunities.length > 0) state.rawOpportunities = opportunities;
                 if (contactRecords.length > 0) state.rawContacts = contactRecords;
+                if (requests.length > 0) state.rawRequests = requests;
+                if (seals.length > 0) state.rawSeals = seals;
 
                 // Update kanban cards from Airtable
                 if (kanbanRecords.length > 0) {
@@ -2246,6 +2251,207 @@
             linkOppToPartner(partnerId, oppId);
         }
 
+        function renderImpactReport() {
+            if (!state.impactReport.open) return '';
+            const { seal, range, generated } = state.impactReport;
+            const fmt = v => v >= 1000000 ? '$' + (v / 1000000).toFixed(1) + 'M' : v >= 1000 ? '$' + Math.round(v / 1000) + 'K' : '$' + v.toLocaleString();
+
+            if (!generated) {
+                const sealNames = [...new Set(
+                    (state.rawSeals.length > 0
+                        ? state.rawSeals.map(s => s.fields['Full name'])
+                        : (state.rawOpportunities || []).map(o => {
+                            const f = o.fields['SEAL Name'];
+                            return Array.isArray(f) ? f : (f ? [f] : []);
+                          }).flat()
+                    ).filter(Boolean)
+                )].sort();
+                const ranges = getDateRanges();
+                const reportRanges = ['FY27','YTD','Q1-FY27','Q2-FY27','Q3-FY27','Q4-FY27','FY26'];
+                return `<div class="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4"
+                            onclick="if(event.target===this){state.impactReport.open=false;render();}">
+                    <div class="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6" onclick="event.stopPropagation()">
+                        <h2 class="text-lg font-bold text-gray-900 mb-1">Generate Impact Report</h2>
+                        <p class="text-sm text-gray-500 mb-5">Select a SEAL and time frame to generate a printable summary.</p>
+                        <div class="space-y-4">
+                            <div>
+                                <label class="text-xs font-semibold text-gray-500 uppercase tracking-wide">SEAL</label>
+                                <select id="ir-seal" class="mt-1 w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-pink-400">
+                                    ${sealNames.length === 0 ? '<option>Loading...</option>' : sealNames.map(n => `<option value="${n.replace(/"/g,'&quot;')}" ${seal === n ? 'selected' : ''}>${n.replace(/</g,'&lt;')}</option>`).join('')}
+                                </select>
+                            </div>
+                            <div>
+                                <label class="text-xs font-semibold text-gray-500 uppercase tracking-wide">Time Frame</label>
+                                <select id="ir-range" class="mt-1 w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-pink-400">
+                                    ${reportRanges.map(k => ranges[k] ? `<option value="${k}" ${range === k ? 'selected' : ''}>${ranges[k].label}</option>` : '').join('')}
+                                </select>
+                            </div>
+                        </div>
+                        <div class="flex gap-3 mt-6">
+                            <button onclick="state.impactReport.open=false;render();"
+                                class="flex-1 py-2 rounded-lg border border-gray-300 text-sm font-medium text-gray-600 hover:bg-gray-50">Cancel</button>
+                            <button onclick="
+                                state.impactReport.seal = document.getElementById('ir-seal').value;
+                                state.impactReport.range = document.getElementById('ir-range').value;
+                                state.impactReport.generated = true;
+                                render();"
+                                class="flex-1 py-2 rounded-lg bg-pink-600 text-white text-sm font-semibold hover:bg-pink-700">Generate</button>
+                        </div>
+                    </div>
+                </div>`;
+            }
+
+            // === FULL REPORT ===
+            const ranges = getDateRanges();
+            const rangeInfo = ranges[range] || ranges['FY27'];
+            const startDate = new Date(rangeInfo.start);
+            const endDate = new Date(rangeInfo.end);
+            const today = new Date();
+
+            const matchesSeal = (field) => {
+                if (!field) return false;
+                if (Array.isArray(field)) return field.some(n => n === seal || (n && n.includes(seal)));
+                return field === seal || field.includes(seal);
+            };
+
+            const sealOpps = (state.rawOpportunities || []).filter(o => {
+                const d = o.fields['SEAL Engagement Date'] ? new Date(o.fields['SEAL Engagement Date']) : null;
+                return d && d >= startDate && d <= endDate && matchesSeal(o.fields['SEAL Name']);
+            });
+
+            const sealRequests = (state.rawRequests || []).filter(req => {
+                const d = req.fields['Created at'] ? new Date(req.fields['Created at']) : null;
+                const t = req.fields['Request Type'] || '';
+                return d && d >= startDate && d <= endDate && !t.includes('(Labs)') && matchesSeal(req.fields['SEAL Name']);
+            });
+
+            const totalPipeline = sealOpps.reduce((s, o) => s + parseFloat(o.fields['1st Year ACV (converted)'] || 0), 0);
+            const closedWonOpps = sealOpps.filter(o => o.fields['Stage'] === 'Closed Won' || o.fields['Stage'] === '8 - Closed Won');
+            const closedWonACV = closedWonOpps.reduce((s, o) => s + parseFloat(o.fields['1st Year ACV (converted)'] || 0), 0);
+
+            // Monthly cumulative table
+            const monthNames = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+            const monthlyRows = [];
+            let runPipeline = 0, runClosedWon = 0;
+            let cursor = new Date(startDate.getFullYear(), startDate.getMonth(), 1);
+            const rangeEndMonth = new Date(endDate.getFullYear(), endDate.getMonth(), 1);
+            while (cursor <= rangeEndMonth && cursor <= today) {
+                const mStart = new Date(cursor);
+                const mEnd = new Date(cursor.getFullYear(), cursor.getMonth() + 1, 0);
+                const mOpps = sealOpps.filter(o => {
+                    const d = new Date(o.fields['SEAL Engagement Date']);
+                    return d >= mStart && d <= mEnd;
+                });
+                runPipeline += mOpps.reduce((s, o) => s + parseFloat(o.fields['1st Year ACV (converted)'] || 0), 0);
+                runClosedWon += mOpps.filter(o => o.fields['Stage'] === 'Closed Won' || o.fields['Stage'] === '8 - Closed Won')
+                    .reduce((s, o) => s + parseFloat(o.fields['1st Year ACV (converted)'] || 0), 0);
+                monthlyRows.push({ label: `${monthNames[cursor.getMonth()]} ${cursor.getFullYear()}`, pipeline: runPipeline, closedWon: runClosedWon });
+                cursor.setMonth(cursor.getMonth() + 1);
+            }
+
+            const sortedOpps = [...sealOpps].sort((a, b) =>
+                parseFloat(b.fields['1st Year ACV (converted)'] || 0) - parseFloat(a.fields['1st Year ACV (converted)'] || 0)
+            );
+
+            return `<div class="fixed inset-0 bg-black/80 z-50 overflow-y-auto">
+                <div class="min-h-full flex items-start justify-center p-8">
+                    <div class="bg-white rounded-2xl shadow-2xl w-full max-w-4xl">
+                        <div class="flex items-center justify-between px-8 py-5 rounded-t-2xl" style="background:#1D1925;">
+                            <div>
+                                <p class="text-xs font-semibold uppercase tracking-widest mb-1" style="color:#FF2B7A;">Impact Report</p>
+                                <h1 class="text-2xl font-bold text-white">${seal.replace(/</g,'&lt;')}</h1>
+                                <p class="text-sm mt-0.5" style="color:#4FE8CA;">${rangeInfo.label}</p>
+                            </div>
+                            <div class="flex items-center gap-2">
+                                <button onclick="window.print();"
+                                    class="px-4 py-2 rounded-lg text-sm font-medium text-white border border-white/20 hover:bg-white/10 transition-colors">Print / Save PDF</button>
+                                <button onclick="state.impactReport.generated=false;render();"
+                                    class="px-4 py-2 rounded-lg text-sm font-medium text-white border border-white/20 hover:bg-white/10 transition-colors">← Edit</button>
+                                <button onclick="state.impactReport.open=false;state.impactReport.generated=false;render();"
+                                    class="px-4 py-2 rounded-lg text-sm font-semibold text-white hover:bg-white/10 transition-colors">✕</button>
+                            </div>
+                        </div>
+
+                        <div class="grid grid-cols-3 border-b border-gray-100">
+                            <div class="px-8 py-6 text-center">
+                                <p class="text-xs font-semibold uppercase tracking-widest text-gray-400 mb-2">Pipeline Influenced</p>
+                                <p class="text-4xl font-bold text-gray-900">${totalPipeline > 0 ? fmt(totalPipeline) : '—'}</p>
+                                <p class="text-xs text-gray-400 mt-1">${sealOpps.length} opportunit${sealOpps.length !== 1 ? 'ies' : 'y'}</p>
+                            </div>
+                            <div class="px-8 py-6 text-center border-x border-gray-100">
+                                <p class="text-xs font-semibold uppercase tracking-widest text-gray-400 mb-2">Closed Won ACV</p>
+                                <p class="text-4xl font-bold" style="color:#16a34a;">${closedWonACV > 0 ? fmt(closedWonACV) : '—'}</p>
+                                <p class="text-xs text-gray-400 mt-1">${closedWonOpps.length} opp${closedWonOpps.length !== 1 ? 's' : ''}</p>
+                            </div>
+                            <div class="px-8 py-6 text-center">
+                                <p class="text-xs font-semibold uppercase tracking-widest text-gray-400 mb-2">Requests</p>
+                                <p class="text-4xl font-bold text-gray-900">${sealRequests.length}</p>
+                                <p class="text-xs text-gray-400 mt-1">&nbsp;</p>
+                            </div>
+                        </div>
+
+                        ${monthlyRows.length > 0 ? `
+                        <div class="px-8 py-6 border-b border-gray-100">
+                            <h2 class="text-xs font-bold text-gray-500 uppercase tracking-widest mb-4">Cumulative Pipeline by Month</h2>
+                            <table class="w-full">
+                                <thead>
+                                    <tr class="border-b-2 border-gray-200">
+                                        <th class="text-left pb-2 text-xs font-semibold text-gray-500 uppercase">Month</th>
+                                        <th class="text-right pb-2 text-xs font-semibold text-gray-500 uppercase">Cumulative Pipeline</th>
+                                        <th class="text-right pb-2 text-xs font-semibold text-gray-500 uppercase">Cumulative Closed Won</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    ${monthlyRows.map((r, i) => `
+                                    <tr class="border-b border-gray-50 ${i % 2 === 0 ? '' : 'bg-gray-50/60'}">
+                                        <td class="py-2.5 text-sm font-medium text-gray-700">${r.label}</td>
+                                        <td class="py-2.5 text-sm text-right font-semibold text-gray-800">${r.pipeline > 0 ? fmt(r.pipeline) : '—'}</td>
+                                        <td class="py-2.5 text-sm text-right font-semibold ${r.closedWon > 0 ? 'text-green-600' : 'text-gray-300'}">${r.closedWon > 0 ? fmt(r.closedWon) : '—'}</td>
+                                    </tr>`).join('')}
+                                </tbody>
+                            </table>
+                        </div>` : ''}
+
+                        <div class="px-8 py-6">
+                            <h2 class="text-xs font-bold text-gray-500 uppercase tracking-widest mb-4">Opportunities (${sealOpps.length})</h2>
+                            ${sealOpps.length === 0
+                                ? `<p class="text-sm text-gray-400 italic py-4">No opportunities found for this SEAL in the selected period.</p>`
+                                : `<table class="w-full">
+                                <thead>
+                                    <tr class="border-b-2 border-gray-200">
+                                        <th class="text-left pb-2 text-xs font-semibold text-gray-500 uppercase">Account</th>
+                                        <th class="text-left pb-2 text-xs font-semibold text-gray-500 uppercase">Opportunity</th>
+                                        <th class="text-right pb-2 text-xs font-semibold text-gray-500 uppercase">ACV</th>
+                                        <th class="text-left pb-2 text-xs font-semibold text-gray-500 uppercase">Stage</th>
+                                        <th class="text-left pb-2 text-xs font-semibold text-gray-500 uppercase">Engagement Date</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    ${sortedOpps.map((o, i) => {
+                                        const f = o.fields;
+                                        const acv = parseFloat(f['1st Year ACV (converted)'] || 0);
+                                        const isWon = f['Stage'] === 'Closed Won' || f['Stage'] === '8 - Closed Won';
+                                        const engDate = f['SEAL Engagement Date'] ? new Date(f['SEAL Engagement Date']).toLocaleDateString('en-US', {month:'short',day:'numeric',year:'numeric'}) : '—';
+                                        return `<tr class="border-b border-gray-50 ${i % 2 === 0 ? '' : 'bg-gray-50/60'}">
+                                            <td class="py-2.5 text-sm font-medium text-gray-800">${(f['Account Name'] || '').replace(/</g,'&lt;')}</td>
+                                            <td class="py-2.5 text-sm text-gray-500 max-w-xs truncate">${(f['Opportunity Name'] || '').replace(/</g,'&lt;')}</td>
+                                            <td class="py-2.5 text-sm text-right font-semibold ${isWon ? 'text-green-600' : 'text-gray-800'}">${acv > 0 ? fmt(acv) : '—'}</td>
+                                            <td class="py-2.5"><span class="inline-block px-2 py-0.5 rounded-full text-xs font-medium ${isWon ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-600'}">${(f['Stage'] || '').replace(/</g,'&lt;')}</span></td>
+                                            <td class="py-2.5 text-sm text-gray-400">${engDate}</td>
+                                        </tr>`;
+                                    }).join('')}
+                                </tbody>
+                            </table>`}
+                        </div>
+
+                        <div class="px-8 py-4 bg-gray-50 rounded-b-2xl border-t border-gray-100 flex items-center justify-between">
+                            <span class="text-xs text-gray-400">Generated ${new Date().toLocaleDateString('en-US', {month:'long',day:'numeric',year:'numeric'})} · BetterUp SEAL Program</span>
+                        </div>
+                    </div>
+                </div>
+            </div>`;
+        }
+
         function renderCoSellingView() {
             const partners = state.coSellingPartners;
             const filter = state.coSellingFilter;
@@ -2272,8 +2478,9 @@
             const totalACV = [...allLinkedOppIds].reduce((sum, id) => sum + (Number((oppMap[id] || {})['1st Year ACV (converted)']) || 0), 0);
 
             const modal = state.showAddPartnerModal ? renderAddPartnerModal() : '';
+            const impactOverlay = renderImpactReport();
 
-            return modal + `<div class="max-w-7xl mx-auto px-8 py-8">
+            return impactOverlay + modal + `<div class="max-w-7xl mx-auto px-8 py-8">
                 <div class="flex items-start justify-between mb-6">
                     <div>
                         <h1 class="text-2xl font-bold text-white mb-1">PAC Co-Selling Matrix</h1>
@@ -2284,8 +2491,10 @@
                         ${filterBtn('High', '🔴 High')}
                         ${filterBtn('Medium', '🟡 Medium')}
                         ${filterBtn('Low', '🔵 Low')}
+                        <button onclick="state.impactReport.open=true; state.impactReport.generated=false; render();"
+                            class="ml-2 px-4 py-1.5 rounded-full text-sm font-semibold border border-white/30 text-white hover:bg-white/10 transition-colors">⚡ Impact Report</button>
                         ${canWrite ? `<button onclick="state.showAddPartnerModal=true; render();"
-                            class="ml-2 px-4 py-1.5 rounded-full text-sm font-semibold bg-pink-600 text-white hover:bg-pink-700 transition-colors">+ Add Partner</button>` : ''}
+                            class="ml-1 px-4 py-1.5 rounded-full text-sm font-semibold bg-pink-600 text-white hover:bg-pink-700 transition-colors">+ Add Partner</button>` : ''}
                     </div>
                 </div>
                 <div class="grid grid-cols-3 gap-4 mb-6">
