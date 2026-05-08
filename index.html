@@ -1167,8 +1167,8 @@
             // Filter marketing data to the selected date range using Stage 2 Date
             // Note: SEAL data uses Engagement Date; marketing uses Stage 2 Date — closer to qualified pipeline.
             const mktFiltered = marketingData.filter(row => {
-                const dateToCheck = row['Stage 2 Date'] || row['Stage 1 Date'];
-                return dateToCheck && dateToCheck >= state.startDate && dateToCheck <= state.endDate;
+                const stg2 = row['Stage 2 Date'];
+                return stg2 && stg2 >= state.startDate && stg2 <= state.endDate;
             });
 
             const normalize = s => (s || '').toLowerCase().replace(/\s+/g, ' ').trim();
