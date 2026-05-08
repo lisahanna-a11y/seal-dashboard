@@ -238,16 +238,24 @@
             const lastMonthStart = new Date(currentYear, currentMonth - 1, 1);
             const lastMonthEnd = new Date(currentYear, currentMonth, 0);
 
-            // This Quarter
-            const thisQuarterMonth = Math.floor(currentMonth / 3) * 3;
-            const thisQuarterStart = new Date(currentYear, thisQuarterMonth, 1);
-            const thisQuarterEnd = new Date(currentYear, thisQuarterMonth + 3, 0);
-
-            // Last Quarter
-            const lastQuarterMonth = thisQuarterMonth - 3;
-            const lastQuarterYear = lastQuarterMonth < 0 ? currentYear - 1 : currentYear;
-            const lastQuarterStart = new Date(lastQuarterYear, lastQuarterMonth < 0 ? lastQuarterMonth + 12 : lastQuarterMonth, 1);
-            const lastQuarterEnd = new Date(lastQuarterYear, (lastQuarterMonth < 0 ? lastQuarterMonth + 12 : lastQuarterMonth) + 3, 0);
+            // Fiscal quarters: FY starts Feb 1. Q1=Feb-Apr, Q2=May-Jul, Q3=Aug-Oct, Q4=Nov-Jan
+            // fyStartYear = calendar year when Feb of this FY occurred (Jan belongs to the prior FY's Q4)
+            const fyStartYear = currentMonth === 0 ? currentYear - 1 : currentYear;
+            const fiscalQuarterDefs = [
+                { start: new Date(fyStartYear, 1, 1),  end: new Date(fyStartYear, 3, 30) },      // Q1: Feb-Apr
+                { start: new Date(fyStartYear, 4, 1),  end: new Date(fyStartYear, 6, 31) },      // Q2: May-Jul
+                { start: new Date(fyStartYear, 7, 1),  end: new Date(fyStartYear, 9, 31) },      // Q3: Aug-Oct
+                { start: new Date(fyStartYear, 10, 1), end: new Date(fyStartYear + 1, 0, 31) },  // Q4: Nov-Jan
+            ];
+            const thisFQIdx = fiscalQuarterDefs.findIndex(q => today >= q.start && today <= q.end);
+            const thisQuarterStart = fiscalQuarterDefs[thisFQIdx].start;
+            const thisQuarterEnd = fiscalQuarterDefs[thisFQIdx].end;
+            const lastQuarterStart = thisFQIdx > 0
+                ? fiscalQuarterDefs[thisFQIdx - 1].start
+                : new Date(fyStartYear - 1, 10, 1);   // Q4 of prior FY: Nov
+            const lastQuarterEnd = thisFQIdx > 0
+                ? fiscalQuarterDefs[thisFQIdx - 1].end
+                : new Date(fyStartYear, 0, 31);        // Q4 of prior FY: Jan 31
 
             // Last 30 Days
             const last30Start = new Date(today);
@@ -956,9 +964,15 @@
 
             console.log('Monthly breakdown using fiscal year:', fiscalStartYear);
 
+            const filterStart = new Date(state.startDate);
+            const filterEnd = new Date(state.endDate);
+
             for (let i = 0; i < 12; i++) {
                 const monthStart = new Date(years[i], i + 1, 1);
                 const monthEnd = new Date(years[i], i + 2, 0);
+
+                // Skip months outside the selected date range
+                if (monthEnd < filterStart || monthStart > filterEnd) continue;
 
                 // Stop at the current month — don't show future months
                 if (monthStart > currentDate) break;
