@@ -1188,12 +1188,13 @@
             });
 
             // Tag each SEAL opp as co-influenced or SEAL-only
-            const sealOppNames = new Set(filteredOpps.map(o => normalize(o.fields['Opportunity Name'] || '')));
+            // Use displayOpps so individual SEAL filter is respected
+            const sealOppNames = new Set(displayOpps.map(o => normalize(o.fields['Opportunity Name'] || '')));
 
             let coInfluencedCount = 0, coInfluencedPipeline = 0, coInfluencedClosedWon = 0;
             let sealOnlyCount = 0, sealOnlyPipeline = 0, sealOnlyClosedWon = 0;
 
-            filteredOpps.forEach(opp => {
+            displayOpps.forEach(opp => {
                 const key = normalize(opp.fields['Opportunity Name'] || '');
                 const acv = parseFloat(opp.fields['1st Year ACV (converted)'] || 0);
                 const isWon = opp.fields['Stage'] === 'Closed Won' || opp.fields['Stage'] === '8 - Closed Won';
@@ -3224,8 +3225,13 @@
                 ? (mkt.sealOnlyClosedWon || 0) + (mkt.coInfluencedClosedWon || 0) + (mkt.marketingOnlyClosedWon || 0)
                 : metrics.sealTeam.closedWonACV;
 
-            const sealOnlyPipelineDisplay = mkt.hasData ? (mkt.sealOnlyPipeline || 0) : displayPipeline;
-            const sealOnlyClosedWonDisplay = mkt.hasData ? (mkt.sealOnlyClosedWon || 0) : displayClosedWon;
+            // For individual SEAL view, always use their direct pipeline (not the all-SEAL mkt rollup)
+            const sealOnlyPipelineDisplay = state.selectedSeal !== 'all'
+                ? metrics.sealTeam.totalPipelineInfluenced
+                : (mkt.hasData ? (mkt.sealOnlyPipeline || 0) : displayPipeline);
+            const sealOnlyClosedWonDisplay = state.selectedSeal !== 'all'
+                ? metrics.sealTeam.closedWonACV
+                : (mkt.hasData ? (mkt.sealOnlyClosedWon || 0) : displayClosedWon);
 
             const pipelineChange = calculateChange(sealOnlyPipelineDisplay, metrics.previousPeriod.totalPipelineInfluenced);
             const closedWonChange = calculateChange(sealOnlyClosedWonDisplay, metrics.previousPeriod.closedWonACV);
