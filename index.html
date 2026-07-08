@@ -207,6 +207,7 @@
                 chroImpact: true
             },
             showMonthlyOpps: false,
+            showAdvisorActivationDetails: false,
             coSellingPartners: [],
             coSellingFilter: 'all',
             rawOpportunities: [],
@@ -492,7 +493,7 @@
         }
 
         // Process Airtable data into dashboard metrics
-        function processAirtableData(opportunities, requests, engagements, seals, otherActivities = [], marketingData = [], oppGridRecords = null) {
+        function processAirtableData(opportunities, requests, engagements, seals, otherActivities = [], marketingData = [], oppGridRecords = null, scanTrackerRecords = null) {
             const startDate = new Date(state.startDate);
             const endDate = new Date(state.endDate);
 
@@ -543,9 +544,11 @@
                 console.log('Unique Stage values in filtered opps:', stageValues);
             }
 
-            const closedWonOpps = filteredOpps.filter(opp =>
-                opp.fields['Stage'] === 'Closed Won' || opp.fields['Stage'] === '8 - Closed Won'
-            );
+            const closedWonOpps = opportunities.filter(opp => {
+                const closeDate = opp.fields['Close Date'] ? new Date(opp.fields['Close Date']) : null;
+                return closeDate && closeDate >= startDate && closeDate <= endDate &&
+                    (opp.fields['Stage'] === 'Closed Won' || opp.fields['Stage'] === '8 - Closed Won');
+            });
 
             console.log(`Found ${closedWonOpps.length} closed won opportunities`);
 
@@ -940,9 +943,18 @@
                 return sum + parseFloat(opp.fields['1st Year ACV (converted)'] || 0);
             }, 0);
 
-            const displayClosedWonOpps = displayOpps.filter(opp =>
-                opp.fields['Stage'] === 'Closed Won' || opp.fields['Stage'] === '8 - Closed Won'
-            );
+            let displayClosedWonOpps = closedWonOpps;
+            if (state.selectedSeal && state.selectedSeal !== 'all') {
+                displayClosedWonOpps = closedWonOpps.filter(opp => {
+                    const sealNameField = opp.fields['SEAL Name'];
+                    if (Array.isArray(sealNameField)) {
+                        return sealNameField.some(name => name === state.selectedSeal || name.includes(state.selectedSeal));
+                    } else if (sealNameField) {
+                        return sealNameField === state.selectedSeal || sealNameField.includes(state.selectedSeal);
+                    }
+                    return false;
+                });
+            }
             const displayClosedWonACV = displayClosedWonOpps.reduce((sum, opp) => {
                 return sum + parseFloat(opp.fields['1st Year ACV (converted)'] || 0);
             }, 0);
@@ -983,8 +995,11 @@
                 });
 
                 const monthPipeline = monthOpps.reduce((sum, opp) => sum + parseFloat(opp.fields['1st Year ACV (converted)'] || 0), 0);
-                const monthClosedWon = monthOpps
-                    .filter(opp => opp.fields['Stage'] === 'Closed Won' || opp.fields['Stage'] === '8 - Closed Won')
+                const monthClosedWon = displayClosedWonOpps
+                    .filter(opp => {
+                        const closeDate = new Date(opp.fields['Close Date']);
+                        return closeDate >= monthStart && closeDate <= monthEnd;
+                    })
                     .reduce((sum, opp) => sum + parseFloat(opp.fields['1st Year ACV (converted)'] || 0), 0);
 
                 monthlyGoals.push({
@@ -1197,15 +1212,23 @@
             displayOpps.forEach(opp => {
                 const key = normalize(opp.fields['Opportunity Name'] || '');
                 const acv = parseFloat(opp.fields['1st Year ACV (converted)'] || 0);
-                const isWon = opp.fields['Stage'] === 'Closed Won' || opp.fields['Stage'] === '8 - Closed Won';
                 if (mktByOpp[key]) {
                     coInfluencedCount++;
                     coInfluencedPipeline += acv;
-                    if (isWon) coInfluencedClosedWon += acv;
                 } else {
                     sealOnlyCount++;
                     sealOnlyPipeline += acv;
-                    if (isWon) sealOnlyClosedWon += acv;
+                }
+            });
+
+            // Closed won uses Close Date filter (not engagement date)
+            displayClosedWonOpps.forEach(opp => {
+                const key = normalize(opp.fields['Opportunity Name'] || '');
+                const acv = parseFloat(opp.fields['1st Year ACV (converted)'] || 0);
+                if (mktByOpp[key]) {
+                    coInfluencedClosedWon += acv;
+                } else {
+                    sealOnlyClosedWon += acv;
                 }
             });
 
@@ -1283,6 +1306,31 @@
                 .map(([name, d]) => ({ name, totalOpps: d.totalOpps, sealEngaged: d.sealEngaged }))
                 .sort((a, b) => b.sealEngaged - a.sealEngaged || b.totalOpps - a.totalOpps);
 
+            // Proactive Advisor Activation — SEAL Scan Tracker opps where outreach was sent to the rep
+            const activationRecords = (scanTrackerRecords || [])
+                .filter(rec => !!rec.fields['Rep Outreach Date'])
+                .map(rec => {
+                    const ownerField = rec.fields['Account Owner'];
+                    const repName = (ownerField && typeof ownerField === 'object') ? (ownerField.name || ownerField.email || 'Unknown') : (ownerField || 'Unknown');
+                    const response = rec.fields['Rep Response'] || 'No Response';
+                    const bucket = response === 'Approved' ? 'accepted' : response === 'Declined' ? 'declined' : 'noResponse';
+                    return {
+                        oppName: rec.fields['Opp Name'] || 'Unknown Opportunity',
+                        repName,
+                        response,
+                        bucket,
+                        outreachDate: rec.fields['Rep Outreach Date']
+                    };
+                })
+                .sort((a, b) => (b.outreachDate || '').localeCompare(a.outreachDate || ''));
+            const advisorActivation = {
+                total: activationRecords.length,
+                accepted: activationRecords.filter(r => r.bucket === 'accepted').length,
+                declined: activationRecords.filter(r => r.bucket === 'declined').length,
+                noResponse: activationRecords.filter(r => r.bucket === 'noResponse').length,
+                records: activationRecords
+            };
+
             return {
                 targets: {
                     totalPipeline: adminSettings.totalPipelineTarget,
@@ -1314,7 +1362,8 @@
                 advisorImpact,
                 chroImpact,
                 marketingAttribution,
-                repAdoption
+                repAdoption,
+                advisorActivation
             };
         }
 
@@ -1332,7 +1381,7 @@
                 await fetchConfigFromAirtable(pat);
 
                 // Fetch all tables, marketing data, and kanban cards in parallel
-                const [opportunities, requests, engagements, seals, otherActivities, marketingData, kanbanRecords, oppGridRecords, coSellingRecords, contactRecords] = await Promise.all([
+                const [opportunities, requests, engagements, seals, otherActivities, marketingData, kanbanRecords, oppGridRecords, coSellingRecords, contactRecords, scanTrackerRecords] = await Promise.all([
                     fetchAirtableTable('tblqtDoaoBNBvkEGC', 'Opportunities', pat, 'All influenced Opps'),
                     fetchAirtableTable('tblgl22l1BJZEHuEG', 'Requests', pat),
                     fetchAirtableTable('tblqDX9oFP6kbkCyG', 'Engagements', pat),
@@ -1342,7 +1391,8 @@
                     fetchAirtableTable(KANBAN_TABLE_ID, 'PAC Kanban', pat),
                     fetchAirtableTable('tblMKnSY6RV3Puvvn', 'Opportunity Grid', pat),
                     fetchAirtableTable('tblDTq7TTP42GzdPF', 'CoSelling', pat),
-                    fetchAirtableTable(AT_CONTACTS_TABLE_ID, 'AT Contacts Report', pat)
+                    fetchAirtableTable(AT_CONTACTS_TABLE_ID, 'AT Contacts Report', pat),
+                    fetchAirtableTable('tbl3cPUbNYYksaRux', 'SEAL Scan Tracker', pat)
                 ]);
                 if (coSellingRecords.length > 0) state.coSellingPartners = coSellingRecords;
                 if (opportunities.length > 0) state.rawOpportunities = opportunities;
@@ -1357,7 +1407,7 @@
                 }
 
                 // Process the data
-                const processedData = processAirtableData(opportunities, requests, engagements, seals, otherActivities, marketingData, oppGridRecords);
+                const processedData = processAirtableData(opportunities, requests, engagements, seals, otherActivities, marketingData, oppGridRecords, scanTrackerRecords);
 
                 // Update state
                 state.metrics = processedData;
@@ -3958,6 +4008,73 @@
                                                 <td class="py-2 px-3 text-center font-semibold text-blue-700">${r.sealEngaged}</td>
                                                 <td class="py-2 px-3 text-center text-gray-500">${r.totalOpps - r.sealEngaged}</td>
                                             </tr>`).join('')}
+                                    </tbody>
+                                </table>
+                            </div>
+                            ` : ''}
+                        </div>`;
+                    })()}
+
+                    <!-- Proactive Advisor Activation -->
+                    ${(() => {
+                        const aa = metrics.advisorActivation || { total: 0, accepted: 0, declined: 0, noResponse: 0, records: [] };
+                        const pct = n => aa.total > 0 ? Math.round(n / aa.total * 100) : 0;
+                        const badgeClass = { accepted: 'bg-green-100 text-green-700', declined: 'bg-red-100 text-red-700', noResponse: 'bg-yellow-100 text-yellow-700' };
+                        return `
+                        <div id="sec-advisor-activation" class="bg-white rounded-xl p-8 shadow-lg mb-8">
+                            <div class="flex items-center justify-between mb-6">
+                                <div>
+                                    <h2 class="text-2xl font-bold text-gray-900 mb-1">Proactive Advisor Activation</h2>
+                                    <p class="text-gray-600">Rep response to opportunities offered an advisor</p>
+                                </div>
+                                <button onclick="state.showAdvisorActivationDetails = !state.showAdvisorActivationDetails; render();"
+                                    class="text-sm px-3 py-1.5 rounded-lg border font-medium transition-colors ${state.showAdvisorActivationDetails ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-gray-600 border-gray-300 hover:border-blue-400 hover:text-blue-600'}">
+                                    ${state.showAdvisorActivationDetails ? 'Hide Details' : 'Show Details'}
+                                </button>
+                            </div>
+
+                            <div class="grid grid-cols-4 gap-6 ${state.showAdvisorActivationDetails ? 'mb-8' : ''}">
+                                <div class="bg-gray-50 border border-gray-200 rounded-xl p-5 text-center">
+                                    <div class="text-3xl font-bold text-gray-900">${aa.total}</div>
+                                    <div class="text-sm font-medium text-gray-600 mt-1">Advisors Offered</div>
+                                </div>
+                                <div class="bg-green-50 border border-green-200 rounded-xl p-5 text-center">
+                                    <div class="text-3xl font-bold text-green-700">${aa.accepted}</div>
+                                    <div class="text-sm font-medium text-green-600 mt-1">Accepted</div>
+                                    <div class="text-xs text-green-500 font-semibold">${pct(aa.accepted)}%</div>
+                                </div>
+                                <div class="bg-red-50 border border-red-200 rounded-xl p-5 text-center">
+                                    <div class="text-3xl font-bold text-red-700">${aa.declined}</div>
+                                    <div class="text-sm font-medium text-red-600 mt-1">Declined</div>
+                                    <div class="text-xs text-red-500 font-semibold">${pct(aa.declined)}%</div>
+                                </div>
+                                <div class="bg-yellow-50 border border-yellow-200 rounded-xl p-5 text-center">
+                                    <div class="text-3xl font-bold text-yellow-700">${aa.noResponse}</div>
+                                    <div class="text-sm font-medium text-yellow-600 mt-1">No Response</div>
+                                    <div class="text-xs text-yellow-500 font-semibold">${pct(aa.noResponse)}%</div>
+                                </div>
+                            </div>
+
+                            ${state.showAdvisorActivationDetails ? `
+                            <div class="overflow-x-auto">
+                                <table class="w-full text-sm">
+                                    <thead>
+                                        <tr class="border-b border-gray-200">
+                                            <th class="text-left py-2 px-3 text-gray-500 font-medium">Opportunity</th>
+                                            <th class="text-left py-2 px-3 text-gray-500 font-medium">Rep</th>
+                                            <th class="text-center py-2 px-3 text-gray-500 font-medium">Outreach Date</th>
+                                            <th class="text-center py-2 px-3 text-gray-500 font-medium">Rep Response</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        ${aa.records.length > 0 ? aa.records.map((r, i) => `
+                                            <tr class="${i % 2 === 0 ? 'bg-gray-50' : 'bg-white'} hover:bg-blue-50 transition-colors">
+                                                <td class="py-2 px-3 font-medium text-gray-900">${r.oppName}</td>
+                                                <td class="py-2 px-3 text-gray-700">${r.repName}</td>
+                                                <td class="py-2 px-3 text-center text-gray-500">${r.outreachDate || '—'}</td>
+                                                <td class="py-2 px-3 text-center"><span class="px-2 py-0.5 rounded-full text-xs font-semibold ${badgeClass[r.bucket]}">${r.response}</span></td>
+                                            </tr>`).join('') : `
+                                            <tr><td colspan="4" class="py-8 text-center text-gray-500">No advisor outreach recorded yet</td></tr>`}
                                     </tbody>
                                 </table>
                             </div>
