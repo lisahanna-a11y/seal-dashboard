@@ -204,7 +204,9 @@
                 monthlyTrends: true,
                 scienceBoardImpact: true,
                 advisorImpact: true,
-                chroImpact: true
+                chroImpact: true,
+                marketingImpact: true,
+                pipelineProgression: true
             },
             showMonthlyOpps: false,
             showAdvisorActivationDetails: false,
@@ -3769,163 +3771,11 @@
                         ` : ''}
                     </div>
 
-                    <!-- Individual SEAL Performance -->
-                    <div id="sec-seals" class="bg-white rounded-xl p-8 shadow-lg mb-8">
-                        <div class="flex items-center justify-between mb-6">
-                            <div>
-                                <h2 class="text-2xl font-bold text-gray-900 mb-1">
-                                    Individual SEAL Performance
-                                    ${state.selectedSeal !== 'all' ? `
-                                        <span class="text-pink-600 text-lg ml-2">(Filtered: ${state.selectedSeal})</span>
-                                    ` : ''}
-                                </h2>
-                                <p class="text-gray-600">
-                                    ${state.selectedSeal !== 'all' ?
-                                        `Detailed metrics for ${state.selectedSeal}` :
-                                        'YTD metrics for each advisor'}
-                                </p>
-                            </div>
-                            <button onclick="toggleSection('sealPerformance')" class="text-gray-600 hover:text-gray-900">
-                                <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="${expandedSections.sealPerformance ? 'M5 15l7-7 7 7' : 'M19 9l-7 7-7-7'}"></path>
-                                </svg>
-                            </button>
-                        </div>
-
-                        ${expandedSections.sealPerformance ? `
-                            <div class="overflow-x-auto">
-                                <table class="w-full">
-                                    <thead>
-                                        <tr class="border-b-2 border-gray-300">
-                                            <th class="text-left py-3 px-4 text-sm font-semibold text-gray-700">Rank</th>
-                                            <th class="text-left py-3 px-4 text-sm font-semibold text-gray-700">SEAL Name</th>
-                                            <th class="text-left py-3 px-4 text-sm font-semibold text-gray-700">Type</th>
-                                            <th class="text-right py-3 px-4 text-sm font-semibold text-gray-700">Total Influence</th>
-                                            <th class="text-right py-3 px-4 text-sm font-semibold text-gray-700">Closed Won</th>
-                                            <th class="text-right py-3 px-4 text-sm font-semibold text-gray-700">Win Rate</th>
-                                            <th class="text-right py-3 px-4 text-sm font-semibold text-gray-700">Avg Deal Size</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody>
-                                        ${metrics.seals.map((seal, idx) => {
-                                            const rankColors = idx === 0 ? 'bg-yellow-400 text-yellow-900' :
-                                                             idx === 1 ? 'bg-gray-300 text-gray-700' :
-                                                             idx === 2 ? 'bg-orange-400 text-orange-900' :
-                                                             'bg-gray-100 text-gray-600';
-                                            return `
-                                                <tr class="border-b border-gray-200 hover:bg-gray-50">
-                                                    <td class="py-4 px-4">
-                                                        <div class="w-8 h-8 rounded-full flex items-center justify-center font-bold text-sm ${rankColors}">
-                                                            ${idx + 1}
-                                                        </div>
-                                                    </td>
-                                                    <td class="py-4 px-4 font-semibold text-gray-900">${seal.name}</td>
-                                                    <td class="py-4 px-4">
-                                                        ${seal.types.map(type => {
-                                                            const colors = type === 'Advisor' ? 'bg-pink-100 text-pink-700' :
-                                                                         type === 'Science Board' ? 'bg-yellow-100 text-yellow-700' :
-                                                                         'bg-blue-100 text-blue-700';
-                                                            return `<span class="text-xs px-2 py-1 rounded ${colors} mr-1">${type}</span>`;
-                                                        }).join('')}
-                                                    </td>
-                                                    <td class="py-4 px-4 text-right text-lg font-bold text-gray-900">${formatCurrency(seal.influence)}</td>
-                                                    <td class="py-4 px-4 text-right text-lg font-semibold text-green-600">${formatCurrency(seal.closedWon)}</td>
-                                                    <td class="py-4 px-4 text-right font-semibold ${seal.winRate >= 0.5 ? 'text-green-600' : seal.winRate >= 0.25 ? 'text-yellow-600' : 'text-red-600'}">
-                                                        ${formatPercent(seal.winRate)}
-                                                    </td>
-                                                    <td class="py-4 px-4 text-right text-sm font-medium text-gray-700">${formatCurrency(seal.avgDealSize)}</td>
-                                                </tr>
-                                            `;
-                                        }).join('')}
-                                    </tbody>
-                                </table>
-                            </div>
-                        ` : ''}
+                    <!-- Section: Rep Adoption & Performance -->
+                    <div class="mt-2 mb-4">
+                        <h2 class="text-xl font-bold text-gray-500 uppercase tracking-wider border-b-2 border-gray-200 pb-2">Rep Adoption &amp; Performance</h2>
                     </div>
 
-                    <!-- SEAL Performance by Stage -->
-                    <div id="sec-stages" class="bg-white rounded-xl p-8 shadow-lg mb-8">
-                        <div class="flex items-center justify-between mb-6">
-                            <div>
-                                <h2 class="text-2xl font-bold text-gray-900 mb-1">SEAL Performance by Stage</h2>
-                                <p class="text-gray-600">Opportunity distribution across pipeline stages</p>
-                            </div>
-                            <button onclick="toggleSection('stageBreakdown')" class="text-gray-600 hover:text-gray-900">
-                                <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="${expandedSections.stageBreakdown ? 'M5 15l7-7 7 7' : 'M19 9l-7 7-7-7'}"></path>
-                                </svg>
-                            </button>
-                        </div>
-
-                        ${expandedSections.stageBreakdown ? `
-                            <div class="space-y-6">
-                                ${(metrics.seals && metrics.seals.length > 0) ? metrics.seals.slice(0, 10).map(seal => {
-                                    if (!seal.stageBreakdown || Object.keys(seal.stageBreakdown).length === 0) {
-                                        return `
-                                            <div class="border-b border-gray-200 pb-6 last:border-0">
-                                                <div class="flex items-center justify-between mb-3">
-                                                    <h3 class="text-lg font-semibold text-gray-900">${seal.name}</h3>
-                                                    <span class="text-sm text-gray-600">No stage data</span>
-                                                </div>
-                                            </div>
-                                        `;
-                                    }
-                                    // Sort stages numerically, with Closed Won/Lost at the end
-                                    const stages = Object.entries(seal.stageBreakdown).sort((a, b) => {
-                                        const stageA = a[0];
-                                        const stageB = b[0];
-
-                                        // Extract stage numbers (e.g., "3 - Proposal" -> 3)
-                                        const numA = parseInt(stageA.match(/^(\d+)/)?.[1] || '999');
-                                        const numB = parseInt(stageB.match(/^(\d+)/)?.[1] || '999');
-
-                                        // Put Closed Won/Lost at the end
-                                        const isClosedA = stageA.includes('Closed');
-                                        const isClosedB = stageB.includes('Closed');
-
-                                        if (isClosedA && !isClosedB) return 1;
-                                        if (!isClosedA && isClosedB) return -1;
-                                        if (isClosedA && isClosedB) {
-                                            // Closed Won before Closed Lost
-                                            return stageA.includes('Won') ? -1 : 1;
-                                        }
-
-                                        return numA - numB;
-                                    });
-                                    const totalValue = stages.reduce((sum, [_, data]) => sum + data.value, 0);
-
-                                    return `
-                                        <div class="border-b border-gray-200 pb-6 last:border-0">
-                                            <div class="flex items-center justify-between mb-3">
-                                                <h3 class="text-lg font-semibold text-gray-900">${seal.name}</h3>
-                                                <span class="text-sm text-gray-600">${seal.opps} opportunities</span>
-                                            </div>
-                                            <div class="space-y-2">
-                                                ${stages.map(([stage, data]) => {
-                                                    const percentage = totalValue > 0 ? (data.value / totalValue) * 100 : 0;
-                                                    const isClosedWon = stage === 'Closed Won' || stage === '8 - Closed Won';
-                                                    return `
-                                                        <div>
-                                                            <div class="flex items-center justify-between text-sm mb-1">
-                                                                <span class="font-medium ${isClosedWon ? 'text-green-700' : 'text-gray-700'}">${stage}</span>
-                                                                <span class="text-gray-600">${data.count} opp${data.count !== 1 ? 's' : ''} • ${formatCurrency(data.value)}</span>
-                                                            </div>
-                                                            <div class="w-full bg-gray-200 rounded-full h-2">
-                                                                <div class="${isClosedWon ? 'bg-green-500' : 'bg-blue-500'} h-2 rounded-full transition-all"
-                                                                     style="width: ${percentage}%"></div>
-                                                            </div>
-                                                        </div>
-                                                    `;
-                                                }).join('')}
-                                            </div>
-                                        </div>
-                                    `;
-                                }).join('') : '<p class="text-gray-500 text-center py-8">No SEAL data available</p>'}
-                            </div>
-                        ` : ''}
-                    </div>
-
-                    <!-- Science Board Impact -->
                     <!-- Rep SEAL Adoption -->
                     ${(() => {
                         const reps = metrics.repAdoption || [];
@@ -4081,6 +3931,167 @@
                             ` : ''}
                         </div>`;
                     })()}
+
+                    <!-- Section: SEAL Performance -->
+                    <div class="mt-2 mb-4">
+                        <h2 class="text-xl font-bold text-gray-500 uppercase tracking-wider border-b-2 border-gray-200 pb-2">SEAL Performance</h2>
+                    </div>
+
+                    <!-- Individual SEAL Performance -->
+                    <div id="sec-seals" class="bg-white rounded-xl p-8 shadow-lg mb-8">
+                        <div class="flex items-center justify-between mb-6">
+                            <div>
+                                <h2 class="text-2xl font-bold text-gray-900 mb-1">
+                                    Individual SEAL Performance
+                                    ${state.selectedSeal !== 'all' ? `
+                                        <span class="text-pink-600 text-lg ml-2">(Filtered: ${state.selectedSeal})</span>
+                                    ` : ''}
+                                </h2>
+                                <p class="text-gray-600">
+                                    ${state.selectedSeal !== 'all' ?
+                                        `Detailed metrics for ${state.selectedSeal}` :
+                                        'YTD metrics for each advisor'}
+                                </p>
+                            </div>
+                            <button onclick="toggleSection('sealPerformance')" class="text-gray-600 hover:text-gray-900">
+                                <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="${expandedSections.sealPerformance ? 'M5 15l7-7 7 7' : 'M19 9l-7 7-7-7'}"></path>
+                                </svg>
+                            </button>
+                        </div>
+
+                        ${expandedSections.sealPerformance ? `
+                            <div class="overflow-x-auto">
+                                <table class="w-full">
+                                    <thead>
+                                        <tr class="border-b-2 border-gray-300">
+                                            <th class="text-left py-3 px-4 text-sm font-semibold text-gray-700">Rank</th>
+                                            <th class="text-left py-3 px-4 text-sm font-semibold text-gray-700">SEAL Name</th>
+                                            <th class="text-left py-3 px-4 text-sm font-semibold text-gray-700">Type</th>
+                                            <th class="text-right py-3 px-4 text-sm font-semibold text-gray-700">Total Influence</th>
+                                            <th class="text-right py-3 px-4 text-sm font-semibold text-gray-700">Closed Won</th>
+                                            <th class="text-right py-3 px-4 text-sm font-semibold text-gray-700">Win Rate</th>
+                                            <th class="text-right py-3 px-4 text-sm font-semibold text-gray-700">Avg Deal Size</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        ${metrics.seals.map((seal, idx) => {
+                                            const rankColors = idx === 0 ? 'bg-yellow-400 text-yellow-900' :
+                                                             idx === 1 ? 'bg-gray-300 text-gray-700' :
+                                                             idx === 2 ? 'bg-orange-400 text-orange-900' :
+                                                             'bg-gray-100 text-gray-600';
+                                            return `
+                                                <tr class="border-b border-gray-200 hover:bg-gray-50">
+                                                    <td class="py-4 px-4">
+                                                        <div class="w-8 h-8 rounded-full flex items-center justify-center font-bold text-sm ${rankColors}">
+                                                            ${idx + 1}
+                                                        </div>
+                                                    </td>
+                                                    <td class="py-4 px-4 font-semibold text-gray-900">${seal.name}</td>
+                                                    <td class="py-4 px-4">
+                                                        ${seal.types.map(type => {
+                                                            const colors = type === 'Advisor' ? 'bg-pink-100 text-pink-700' :
+                                                                         type === 'Science Board' ? 'bg-yellow-100 text-yellow-700' :
+                                                                         'bg-blue-100 text-blue-700';
+                                                            return `<span class="text-xs px-2 py-1 rounded ${colors} mr-1">${type}</span>`;
+                                                        }).join('')}
+                                                    </td>
+                                                    <td class="py-4 px-4 text-right text-lg font-bold text-gray-900">${formatCurrency(seal.influence)}</td>
+                                                    <td class="py-4 px-4 text-right text-lg font-semibold text-green-600">${formatCurrency(seal.closedWon)}</td>
+                                                    <td class="py-4 px-4 text-right font-semibold ${seal.winRate >= 0.5 ? 'text-green-600' : seal.winRate >= 0.25 ? 'text-yellow-600' : 'text-red-600'}">
+                                                        ${formatPercent(seal.winRate)}
+                                                    </td>
+                                                    <td class="py-4 px-4 text-right text-sm font-medium text-gray-700">${formatCurrency(seal.avgDealSize)}</td>
+                                                </tr>
+                                            `;
+                                        }).join('')}
+                                    </tbody>
+                                </table>
+                            </div>
+                        ` : ''}
+                    </div>
+
+                    <!-- SEAL Performance by Stage -->
+                    <div id="sec-stages" class="bg-white rounded-xl p-8 shadow-lg mb-8">
+                        <div class="flex items-center justify-between mb-6">
+                            <div>
+                                <h2 class="text-2xl font-bold text-gray-900 mb-1">SEAL Performance by Stage</h2>
+                                <p class="text-gray-600">Opportunity distribution across pipeline stages</p>
+                            </div>
+                            <button onclick="toggleSection('stageBreakdown')" class="text-gray-600 hover:text-gray-900">
+                                <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="${expandedSections.stageBreakdown ? 'M5 15l7-7 7 7' : 'M19 9l-7 7-7-7'}"></path>
+                                </svg>
+                            </button>
+                        </div>
+
+                        ${expandedSections.stageBreakdown ? `
+                            <div class="space-y-6">
+                                ${(metrics.seals && metrics.seals.length > 0) ? metrics.seals.slice(0, 10).map(seal => {
+                                    if (!seal.stageBreakdown || Object.keys(seal.stageBreakdown).length === 0) {
+                                        return `
+                                            <div class="border-b border-gray-200 pb-6 last:border-0">
+                                                <div class="flex items-center justify-between mb-3">
+                                                    <h3 class="text-lg font-semibold text-gray-900">${seal.name}</h3>
+                                                    <span class="text-sm text-gray-600">No stage data</span>
+                                                </div>
+                                            </div>
+                                        `;
+                                    }
+                                    // Sort stages numerically, with Closed Won/Lost at the end
+                                    const stages = Object.entries(seal.stageBreakdown).sort((a, b) => {
+                                        const stageA = a[0];
+                                        const stageB = b[0];
+
+                                        // Extract stage numbers (e.g., "3 - Proposal" -> 3)
+                                        const numA = parseInt(stageA.match(/^(\d+)/)?.[1] || '999');
+                                        const numB = parseInt(stageB.match(/^(\d+)/)?.[1] || '999');
+
+                                        // Put Closed Won/Lost at the end
+                                        const isClosedA = stageA.includes('Closed');
+                                        const isClosedB = stageB.includes('Closed');
+
+                                        if (isClosedA && !isClosedB) return 1;
+                                        if (!isClosedA && isClosedB) return -1;
+                                        if (isClosedA && isClosedB) {
+                                            // Closed Won before Closed Lost
+                                            return stageA.includes('Won') ? -1 : 1;
+                                        }
+
+                                        return numA - numB;
+                                    });
+                                    const totalValue = stages.reduce((sum, [_, data]) => sum + data.value, 0);
+
+                                    return `
+                                        <div class="border-b border-gray-200 pb-6 last:border-0">
+                                            <div class="flex items-center justify-between mb-3">
+                                                <h3 class="text-lg font-semibold text-gray-900">${seal.name}</h3>
+                                                <span class="text-sm text-gray-600">${seal.opps} opportunities</span>
+                                            </div>
+                                            <div class="space-y-2">
+                                                ${stages.map(([stage, data]) => {
+                                                    const percentage = totalValue > 0 ? (data.value / totalValue) * 100 : 0;
+                                                    const isClosedWon = stage === 'Closed Won' || stage === '8 - Closed Won';
+                                                    return `
+                                                        <div>
+                                                            <div class="flex items-center justify-between text-sm mb-1">
+                                                                <span class="font-medium ${isClosedWon ? 'text-green-700' : 'text-gray-700'}">${stage}</span>
+                                                                <span class="text-gray-600">${data.count} opp${data.count !== 1 ? 's' : ''} • ${formatCurrency(data.value)}</span>
+                                                            </div>
+                                                            <div class="w-full bg-gray-200 rounded-full h-2">
+                                                                <div class="${isClosedWon ? 'bg-green-500' : 'bg-blue-500'} h-2 rounded-full transition-all"
+                                                                     style="width: ${percentage}%"></div>
+                                                            </div>
+                                                        </div>
+                                                    `;
+                                                }).join('')}
+                                            </div>
+                                        </div>
+                                    `;
+                                }).join('') : '<p class="text-gray-500 text-center py-8">No SEAL data available</p>'}
+                            </div>
+                        ` : ''}
+                    </div>
 
                     ${(() => {
                         const sb = metrics.scienceBoardImpact || [];
@@ -4293,14 +4304,26 @@
                         </div>`;
                     })()}
 
+                    <!-- Section: Webinars and Events -->
+                    <div class="mt-2 mb-4">
+                        <h2 class="text-xl font-bold text-gray-500 uppercase tracking-wider border-b-2 border-gray-200 pb-2">Webinars and Events</h2>
+                    </div>
+
                     <!-- Marketing Impact -->
                     ${(() => {
                         if (!mkt.hasData) return '';
                         return `
                         <div id="sec-marketing" class="bg-white rounded-xl p-8 shadow-lg mb-8">
-                            <div class="mb-6">
-                                <h2 class="text-2xl font-bold text-gray-900 mb-1">Marketing Impact</h2>
-                                <p class="text-gray-600">Marketing-influenced pipeline for the selected period, filtered by Stage 2 Date</p>
+                            <div class="flex items-center justify-between mb-6">
+                                <div>
+                                    <h2 class="text-2xl font-bold text-gray-900 mb-1">Marketing Impact</h2>
+                                    <p class="text-gray-600">Marketing-influenced pipeline for the selected period, filtered by Stage 2 Date</p>
+                                </div>
+                                <button onclick="toggleSection('marketingImpact')" class="text-gray-600 hover:text-gray-900">
+                                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="${expandedSections.marketingImpact ? 'M5 15l7-7 7 7' : 'M19 9l-7 7-7-7'}"></path>
+                                    </svg>
+                                </button>
                             </div>
                             <div class="grid grid-cols-3 gap-6">
                                 <div class="bg-green-50 rounded-lg p-6 border border-green-200">
@@ -4319,7 +4342,7 @@
                                     <p class="text-xs text-green-600 mt-2">With attribution</p>
                                 </div>
                             </div>
-                            ${mkt.campaignBreakdown && mkt.campaignBreakdown.length > 0 ? `
+                            ${expandedSections.marketingImpact && mkt.campaignBreakdown && mkt.campaignBreakdown.length > 0 ? `
                             <div class="mt-8">
                                 <h3 class="text-lg font-semibold text-gray-900 mb-4">By Campaign</h3>
                                 <div class="overflow-x-auto">
@@ -4355,6 +4378,11 @@
                         </div>
                         `;
                     })()}
+
+                    <!-- Section: Appendix -->
+                    <div class="mt-2 mb-4">
+                        <h2 class="text-xl font-bold text-gray-500 uppercase tracking-wider border-b-2 border-gray-200 pb-2">Appendix: Historical Snapshots of Opp Progression</h2>
+                    </div>
 
                     <!-- Quarterly Conversion Trends -->
                     <div id="sec-trends" class="bg-white rounded-xl p-8 shadow-lg mb-8">
@@ -4492,9 +4520,14 @@
                                 <h2 class="text-2xl font-bold text-gray-900 mb-1">Pipeline Progression</h2>
                                 <p class="text-gray-600">📸 Historical snapshots: Shows what stage opportunities were in at the end of each month - track real progression!</p>
                             </div>
+                            <button onclick="toggleSection('pipelineProgression')" class="text-gray-600 hover:text-gray-900">
+                                <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="${expandedSections.pipelineProgression ? 'M5 15l7-7 7 7' : 'M19 9l-7 7-7-7'}"></path>
+                                </svg>
+                            </button>
                         </div>
 
-                        ${metrics.seals && metrics.seals.length > 0 && metrics.seals[0].monthlyStageProgression ? `
+                        ${expandedSections.pipelineProgression ? (metrics.seals && metrics.seals.length > 0 && metrics.seals[0].monthlyStageProgression ? `
                             <div class="space-y-8">
                                 ${metrics.seals.slice(0, 5).map(seal => {
                                     if (!seal.monthlyStageProgression || seal.monthlyStageProgression.length === 0) {
@@ -4608,7 +4641,7 @@
                                     `;
                                 }).join('')}
                             </div>
-                        ` : '<p class="text-gray-500 text-center py-8">No pipeline progression data available</p>'}
+                        ` : '<p class="text-gray-500 text-center py-8">No pipeline progression data available</p>') : ''}
                     </div>
 
                     <!-- Footer -->
