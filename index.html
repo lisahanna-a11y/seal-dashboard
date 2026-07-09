@@ -195,18 +195,18 @@
             adminSettings: loadAdminSettings(),
             expandedSections: {
                 executiveSummary: true,
-                goalProgress: true,
-                roiEfficiency: true,
-                repAdoption: true,
-                monthlyGoals: true,
-                sealPerformance: true,
-                stageBreakdown: true,
-                monthlyTrends: true,
-                scienceBoardImpact: true,
-                advisorImpact: true,
-                chroImpact: true,
-                marketingImpact: true,
-                pipelineProgression: true
+                goalProgress: false,
+                roiEfficiency: false,
+                repAdoption: false,
+                monthlyGoals: false,
+                sealPerformance: false,
+                stageBreakdown: false,
+                monthlyTrends: false,
+                scienceBoardImpact: false,
+                advisorImpact: false,
+                chroImpact: false,
+                marketingImpact: false,
+                pipelineProgression: false
             },
             showMonthlyOpps: false,
             showAdvisorActivationDetails: false,
@@ -3315,18 +3315,10 @@
                     <div class="max-w-7xl mx-auto px-8">
                         <div class="flex gap-1 py-2 whitespace-nowrap">
                             ${navBtn('sec-exec', 'Executive Summary')}
-                            ${navBtn('sec-goals', 'Goal Progress')}
-                            ${navBtn('sec-roi', 'ROI & Efficiency')}
-                            ${navBtn('sec-monthly', 'Monthly Targets')}
-                            ${navBtn('sec-seals', 'SEAL Performance')}
-                            ${navBtn('sec-stages', 'Stage Breakdown')}
-                            ${navBtn('sec-rep-adoption', 'Rep Adoption (Open Opps)')}
-                            ${navBtn('sec-science', 'Science Board')}
-                            ${navBtn('sec-advisors', 'Advisors')}
-                            ${navBtn('sec-chro', 'CHRO Luminaries')}
-                            ${mkt.hasData ? navBtn('sec-marketing', 'Marketing Impact') : ''}
-                            ${navBtn('sec-trends', 'Quarterly Trends')}
-                            ${navBtn('sec-pipeline', 'Pipeline Stages')}
+                            ${navBtn('section-rep-adoption', 'Rep Adoption & Performance')}
+                            ${navBtn('section-seal-performance', 'SEAL Performance')}
+                            ${navBtn('section-webinars-events', 'Webinars and Events')}
+                            ${navBtn('section-appendix', 'Appendix')}
                         </div>
                     </div>
                 </div>`;
@@ -3772,7 +3764,7 @@
                     </div>
 
                     <!-- Section: Rep Adoption & Performance -->
-                    <div class="mt-2 mb-4">
+                    <div id="section-rep-adoption" class="mt-2 mb-4">
                         <h2 class="text-xl font-bold text-gray-500 uppercase tracking-wider border-b-2 border-gray-200 pb-2">Rep Adoption &amp; Performance</h2>
                     </div>
 
@@ -3933,7 +3925,7 @@
                     })()}
 
                     <!-- Section: SEAL Performance -->
-                    <div class="mt-2 mb-4">
+                    <div id="section-seal-performance" class="mt-2 mb-4">
                         <h2 class="text-xl font-bold text-gray-500 uppercase tracking-wider border-b-2 border-gray-200 pb-2">SEAL Performance</h2>
                     </div>
 
@@ -4305,7 +4297,7 @@
                     })()}
 
                     <!-- Section: Webinars and Events -->
-                    <div class="mt-2 mb-4">
+                    <div id="section-webinars-events" class="mt-2 mb-4">
                         <h2 class="text-xl font-bold text-gray-500 uppercase tracking-wider border-b-2 border-gray-200 pb-2">Webinars and Events</h2>
                     </div>
 
@@ -4380,7 +4372,7 @@
                     })()}
 
                     <!-- Section: Appendix -->
-                    <div class="mt-2 mb-4">
+                    <div id="section-appendix" class="mt-2 mb-4">
                         <h2 class="text-xl font-bold text-gray-500 uppercase tracking-wider border-b-2 border-gray-200 pb-2">Appendix: Historical Snapshots of Opp Progression</h2>
                     </div>
 
